@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}관리자{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">ADMIN</p><h1>관리자 화면</h1><p>재고 수량을 보정하고 최근 거래 기록을 관리합니다.</p></div>
+  <div class="button-row">
+    <a class="button ghost" href="{{ url_for('web.admin_export_csv') }}">CSV 내보내기</a>
+    <form method="post" action="{{ url_for('web.admin_logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button ghost" type="submit">로그아웃</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>기자재 수량</h2><p>실물 확인 후 전체 수량과 현재 사용 가능 수량을 입력하세요.</p></div>
+  <form class="equipment-add" method="post" action="{{ url_for('web.admin_add_equipment') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>새 기자재 이름<input name="name" maxlength="40" placeholder="예: 오실로스코프" required></label>
+    <label>전체 수량<input type="number" name="total_qty" min="0" max="9999" value="1" required></label>
+    <button class="button primary" type="submit">종류 추가</button>
+  </form>
+  <div class="admin-inventory">
+    {% for item in inventory %}
+    <form class="inventory-edit" method="post" action="{{ url_for('web.admin_update_equipment', equipment_id=item.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <strong>{{ item.name }}</strong>
+      <label>전체<input type="number" name="total_qty" min="0" value="{{ item.total_qty }}" required></label>
+      <label>사용 가능<input type="number" name="available_qty" min="0" value="{{ item.available_qty }}" required></label>
+      <button class="button small" type="submit">수정</button>
+    </form>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>현재 미반납</h2><p>취소되지 않은 거래를 학생·기자재별로 합산합니다.</p></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>학번</th><th>기자재</th><th>미반납 수량</th><th>최근 활동</th></tr></thead>
+      <tbody>
+      {% for row in outstanding %}
+        <tr><td>{{ row.student_id }}</td><td>{{ row.equipment_name }}</td><td><strong>{{ row.quantity }}</strong></td><td data-utc="{{ row.last_activity }}">{{ row.last_activity }}</td></tr>
+      {% else %}<tr><td colspan="4" class="empty-cell">현재 미반납 기자재가 없습니다.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title"><h2>최근 거래</h2><p>취소하면 반대 방향으로 재고가 복구되며 기록은 삭제되지 않습니다.</p></div>
+  <form class="transaction-search" method="get" action="{{ url_for('web.admin_page') }}">
+    <input name="q" value="{{ query }}" placeholder="학번 또는 기자재 이름 검색">
+    <button class="button" type="submit">검색</button>
+    {% if query %}<a class="button ghost" href="{{ url_for('web.admin_page') }}">초기화</a>{% endif %}
+  </form>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>시각</th><th>학번</th><th>기자재</th><th>구분</th><th>수량</th><th>신뢰도</th><th>상태</th><th></th></tr></thead>
+      <tbody>
+      {% for row in transactions %}
+        <tr class="{{ 'muted-row' if row.reversed_at else '' }}">
+          <td data-utc="{{ row.created_at }}">{{ row.created_at }}</td>
+          <td>{{ row.student_id }}</td><td>{{ row.equipment_name }}</td>
+          <td><span class="tag {{ row.action }}">{{ '대여' if row.action == 'loan' else '반납' }}</span></td>
+          <td>{{ row.quantity }}</td><td>{{ '%.1f%%'|format(row.confidence * 100) if row.confidence is not none else '-' }}</td>
+          <td>{{ '취소됨' if row.reversed_at else '정상' }}</td>
+          <td>
+            {% if not row.reversed_at %}
+            <form method="post" action="{{ url_for('web.admin_reverse_transaction', transaction_id=row.id) }}" onsubmit="return confirm('이 거래를 취소하고 재고를 복구할까요?')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button danger small" type="submit">취소</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}<tr><td colspan="8" class="empty-cell">아직 거래 기록이 없습니다.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

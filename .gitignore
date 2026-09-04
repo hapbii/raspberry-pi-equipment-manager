@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+instance/
+.pytest_cache/
+*.log
+*.pdf
+*.zip
+models/*.pt
+models/*_ncnn_model/
+backups/
+runs/
+datasets/
+data/

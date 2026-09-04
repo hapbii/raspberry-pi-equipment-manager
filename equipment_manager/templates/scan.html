@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}대여·반납{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div><p class="eyebrow">SCAN STATION</p><h1>대여·반납 처리</h1><p>정보를 입력한 뒤 기자재를 촬영 구역에 하나만 놓아 주세요.</p></div>
+  <form method="post" action="{{ url_for('web.station_logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button ghost" type="submit">스테이션 로그아웃</button>
+  </form>
+</section>
+
+<div class="scan-layout" id="scan-app" data-mode="{{ detector_mode }}">
+  <section class="panel scan-form-panel">
+    <div class="step-label"><span>1</span> 거래 정보</div>
+    <label>학번<input id="student-id" maxlength="30" placeholder="예: 30304" autocomplete="off"></label>
+    <fieldset class="action-choice">
+      <legend>처리 구분</legend>
+      <label><input type="radio" name="action" value="loan" checked><span>대여</span></label>
+      <label><input type="radio" name="action" value="return"><span>반납</span></label>
+    </fieldset>
+    <label>수량<input id="quantity" type="number" min="1" max="20" value="1"></label>
+    {% if detector_mode == 'mock' %}
+    <label>모의 인식 기자재
+      <select id="mock-equipment">
+        {% for item in inventory %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <p class="mode-note">현재는 카메라 없이 시험하는 모의 인식 모드입니다.</p>
+    {% endif %}
+    <button id="detect-button" class="button primary large" type="button">객체 인식 시작</button>
+  </section>
+
+  <section class="panel result-panel">
+    <div class="step-label"><span>2</span> 인식 결과 확인</div>
+    <div id="scan-placeholder" class="scan-placeholder">
+      <div class="camera-symbol"></div>
+      <strong>아직 인식하지 않았습니다.</strong>
+      <span>버튼을 누르면 여러 프레임의 결과를 비교합니다.</span>
+    </div>
+    <div id="scan-result" class="scan-result hidden">
+      <span class="result-check">✓</span>
+      <p>인식된 기자재</p>
+      <h2 id="result-name"></h2>
+      <p>평균 신뢰도 <strong id="result-confidence"></strong> · <span id="result-votes"></span></p>
+      <button id="confirm-button" class="button success large" type="button">이 결과로 처리</button>
+      <button id="retry-button" class="button ghost" type="button">다시 인식</button>
+    </div>
+    <div id="scan-message" class="inline-message hidden"></div>
+  </section>
+</div>
+{% endblock %}

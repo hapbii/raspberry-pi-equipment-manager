@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}기자재 관리 시스템{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="{{ url_for('web.dashboard') }}">
+      <span class="brand-mark">AI</span>
+      <span><strong>실습 기자재 관리</strong><small>Raspberry Pi 인식 시스템</small></span>
+    </a>
+    <nav aria-label="주요 메뉴">
+      <a href="{{ url_for('web.dashboard') }}">현황</a>
+      <a href="{{ url_for('web.scan_page') }}">대여·반납</a>
+      <a href="{{ url_for('web.admin_page') }}">관리자</a>
+    </nav>
+  </header>
+
+  {% if using_default_secrets %}
+    <div class="security-warning">개발용 기본 PIN 또는 비밀번호를 사용 중입니다. 학교 배포 전 환경변수로 변경하세요.</div>
+  {% endif %}
+
+  <main class="page-shell">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <div class="flash flash-{{ category }}">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <span>AI 기반 실습 기자재 관리 시스템</span>
+    <span>학교 내부망용 MVP</span>
+  </footer>
+</body>
+</html>

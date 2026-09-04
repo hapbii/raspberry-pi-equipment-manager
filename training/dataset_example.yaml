@@ -1,0 +1,10 @@
+# 실제 데이터셋 경로에 맞게 수정하세요.
+path: /content/equipment_dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: multimeter
+  1: arduino
+  2: breadboard

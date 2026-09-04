@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Equipment Manager Web Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/raspberry-pi-equipment-manager
+EnvironmentFile=-/etc/equipment-manager.env
+ExecStart=/opt/raspberry-pi-equipment-manager/.venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=4 wsgi:app
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

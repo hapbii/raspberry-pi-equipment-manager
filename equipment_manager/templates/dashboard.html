@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}현재 기자재 현황{% endblock %}
+{% block content %}
+<section class="hero compact">
+  <div>
+    <p class="eyebrow">LIVE INVENTORY</p>
+    <h1>현재 기자재 현황</h1>
+    <p>학교 내부 어디서든 사용 가능한 기자재 수량을 확인할 수 있습니다.</p>
+  </div>
+  <div class="device-card">
+    <span id="device-dot" class="status-dot unknown"></span>
+    <div><strong id="device-state">상태 확인 중</strong><small id="last-seen">잠시만 기다려 주세요.</small></div>
+  </div>
+</section>
+
+<section id="inventory-grid" class="inventory-grid" aria-live="polite">
+  {% for item in inventory %}
+  <article class="inventory-card" data-equipment-id="{{ item.id }}">
+    <div class="card-top"><span class="equipment-icon">{{ item.name[0] }}</span><span class="availability-badge">사용 가능</span></div>
+    <h2>{{ item.name }}</h2>
+    <strong class="available-number">{{ item.available_qty }}</strong><span class="total-number"> / {{ item.total_qty }}개</span>
+    <div class="meter"><span style="width: {{ (item.available_qty / item.total_qty * 100) if item.total_qty else 0 }}%"></span></div>
+    <p>대여 중 <b class="loaned-number">{{ item.loaned_qty }}</b>개</p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="info-strip">
+  <div><strong>자동 갱신</strong><span>5초마다 최신 상태를 확인합니다.</span></div>
+  <div><strong>개인정보 보호</strong><span>일반 화면에는 학생 정보를 표시하지 않습니다.</span></div>
+  <div><strong>마지막 갱신</strong><span id="dashboard-updated">확인 중</span></div>
+</section>
+{% endblock %}

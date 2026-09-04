@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% set is_admin = mode == 'admin' %}
+{% block title %}{{ '관리자' if is_admin else '인식 스테이션' }} 로그인{% endblock %}
+{% block content %}
+<section class="auth-wrap">
+  <form class="auth-card" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="eyebrow">{{ 'ADMIN ACCESS' if is_admin else 'STATION ACCESS' }}</p>
+    <h1>{{ '관리자 로그인' if is_admin else '인식 스테이션 로그인' }}</h1>
+    <p>{{ '수량 수정과 거래 취소를 위해 인증합니다.' if is_admin else '대여·반납 조작을 위해 스테이션 PIN을 입력합니다.' }}</p>
+    <label>
+      {{ '비밀번호' if is_admin else '스테이션 PIN' }}
+      <input name="{{ 'password' if is_admin else 'pin' }}" type="password" required autofocus autocomplete="current-password">
+    </label>
+    <button class="button primary" type="submit">로그인</button>
+  </form>
+</section>
+{% endblock %}
