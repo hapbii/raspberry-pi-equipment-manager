@@ -1,113 +1,396 @@
-# AI 기반 실습 기자재 관리 시스템
+# AI 실습 기자재 대여·반납 시스템
 
-Raspberry Pi 4B 2GB와 카메라로 기자재의 **종류**를 YOLO로 인식하고, 대여·반납 수량을 학교 내부 웹사이트에서 확인하는 프로젝트입니다. 개별 기자재의 고유번호는 구분하지 않습니다.
+카메라 앞에 기자재를 놓으면 Raspberry Pi가 기자재의 **종류**를 인식합니다. 학생은 학번과 수량을 입력해 대여하거나 반납하고, 다른 PC나 스마트폰에서는 현재 남은 수량을 웹사이트로 확인할 수 있습니다.
 
-## 구현된 기능
-
-- 공개 현황판: 종류별 전체·대여 중·사용 가능 수량, 장치 온라인 상태
-- 스테이션 PIN 로그인 후 YOLO 인식, 결과 확인, 대여·반납 처리
-- 학생별 미반납과 재고 범위를 DB 트랜잭션으로 검사
-- 관리자 기자재·수량 관리, 거래 취소·검색, CSV 내보내기
-- Picamera2/USB 카메라와 PyTorch/NCNN YOLO 모델 지원
-- 모델·카메라 재사용, 동시 추론 방지, 스트리밍 결과 해제, RSS 관측
-- GPIO LED·부저를 고정 worker 하나로 처리
-- 실제 장치 사전 점검, 반복 추론 메모리 검사, SQLite 백업
-- heartbeat와 systemd 부팅 자동 실행
-
-> 저장소에는 학습된 모델이 없습니다. 실제 인식에는 직접 학습한 `best.pt` 또는 `best_ncnn_model`이 필요합니다.
-
-## 구조
+예를 들어 멀티미터 10개 중 2개를 대여하면 웹사이트에는 다음처럼 표시됩니다.
 
 ```text
-equipment_manager/
-  routes/                 공개·스테이션·관리자 라우트
-  vision/
-    camera.py             지속형 Picamera2/OpenCV 카메라
-    detector.py           Mock/YOLO와 다중 프레임 투표
-    service.py            단일 추론 잠금·메모리·수명주기
-  config.py               환경변수
-  db.py                   SQLite
-  inventory.py            재고·거래 규칙
-  hardware.py             GPIO 피드백
-  runtime.py              heartbeat와 만료 데이터 정리
-deploy/
-  equipment-manager.service
-  install_service.sh
-scripts/
-  create_env.py           비밀 설정 생성
-  capture_samples.py      Pi 카메라 학습 사진 수집
-  pi_diagnostics.py       실제 모델·카메라 종합 점검
-  memory_soak_test.py     실제 반복 추론 RSS 검사
-  network_info.py         내부망 주소 확인
-  backup_db.py            DB 백업
-training/                 Colab 노트북과 data.yaml 예시
-tests/                    임시 DB·가짜 장치 자동 테스트
+멀티미터
+전체 10개 / 대여 중 2개 / 사용 가능 8개
 ```
 
-## Raspberry Pi에서 실제로 실행하기
+개별 멀티미터의 고유번호까지 구분하지는 않습니다. 멀티미터, 아두이노, 브레드보드처럼 **큰 종류와 수량**만 관리합니다.
 
-아래가 최종 장비에서 실행할 순서입니다. Raspberry Pi OS Bookworm 64-bit를 권장합니다.
+## 어디서부터 읽으면 되나요?
 
-### 1. 카메라와 시스템 확인
+- Raspberry Pi를 처음 켜는 단계라면 [1부부터](#1부-raspberry-pi-처음-준비하기) 순서대로 진행합니다.
+- Pi OS와 카메라가 이미 준비됐다면 [2부부터](#2부-카메라가-정상인지-확인하기) 시작합니다.
+- 학습 모델 없이 웹 화면만 보고 싶다면 [5부](#5부-모델이-없을-때-웹사이트부터-확인하기)를 봅니다.
+- `best.pt` 또는 NCNN 모델이 준비됐다면 [6부](#6부-학습-모델을-raspberry-pi로-복사하기)부터 실제 인식을 설정합니다.
+- 오류가 발생했다면 화면의 오류 문장을 복사한 뒤 [문제 해결](#문제-해결)에서 찾습니다.
 
-카메라 케이블은 전원을 끈 상태에서 연결합니다. 부팅 후 실행합니다.
+실제 동작까지의 전체 순서는 다음과 같습니다.
+
+```text
+Pi OS 설치 → 카메라 시험 → 프로젝트 설치 → 비밀번호 설정
+→ 모델 복사 → 실제 모드 설정 → 장치 진단 → 메모리 검사
+→ 웹 실행 → 부팅 자동 실행 → 학교 네트워크 접속 확인
+```
+
+---
+
+## 처음 시작하는 사람이 꼭 알아야 할 것
+
+이 문서에 나오는 용어는 다음 뜻입니다.
+
+- **Raspberry Pi 또는 Pi**: 카메라와 웹 서버가 연결될 작은 컴퓨터입니다.
+- **터미널**: 명령어를 입력하는 검은 화면입니다.
+- **PowerShell**: Windows에서 사용하는 터미널입니다.
+- **YOLO 모델**: 사진을 보고 기자재 종류를 판단하는 학습 파일입니다.
+- **`.env`**: 비밀번호, 카메라 종류, 모델 위치 등을 적는 설정 파일입니다.
+- **IP 주소**: 다른 기기에서 Raspberry Pi 웹사이트에 접속할 때 사용하는 주소입니다.
+
+명령어 상자 안의 내용을 한 줄씩 복사하고 `Enter`를 누르면 됩니다. 명령 앞에 보이는 `$`나 `>` 표시는 입력하지 않습니다.
+
+`<PI_USER>`, `<PI_IP>`, `<모델이_있는_경로>`처럼 꺾쇠괄호로 표시한 부분은 그대로 입력하지 말고 자신의 값으로 바꿉니다.
+
+예를 들어 Pi 사용자명이 `equipment`, IP가 `192.168.0.25`라면 다음과 같습니다.
+
+```powershell
+ssh equipment@192.168.0.25
+```
+
+비밀번호를 입력할 때 화면에 글자나 별표가 표시되지 않는 것은 정상입니다. 비밀번호를 입력하고 `Enter`를 누르면 됩니다.
+
+---
+
+## 준비물
+
+필수 준비물:
+
+- Raspberry Pi 4B RAM 2GB
+- Raspberry Pi용 전원 어댑터
+- microSD 카드 16GB 이상
+- Raspberry Pi 공식 카메라 또는 USB 웹캠
+- microSD 카드를 읽을 수 있는 Windows PC
+- 같은 네트워크에 연결할 공유기 또는 Wi-Fi
+- 직접 학습한 YOLO 모델
+
+YOLO 모델은 다음 중 하나가 필요합니다.
+
+```text
+best.pt
+```
+
+또는:
+
+```text
+best_ncnn_model 폴더
+```
+
+모델이 아직 없어도 웹사이트와 대여·반납 기능은 실행할 수 있습니다. 하지만 **실제 카메라 객체 인식은 학습 모델이 준비된 뒤에만 동작합니다.**
+
+---
+
+# 1부. Raspberry Pi 처음 준비하기
+
+이미 Raspberry Pi OS가 설치되어 있고 터미널을 사용할 수 있다면 [2부로 이동](#2부-카메라가-정상인지-확인하기)합니다.
+
+## 1-1. Raspberry Pi OS 설치
+
+Windows PC에서 [Raspberry Pi Imager](https://www.raspberrypi.com/software/)를 설치하고 실행합니다.
+
+Imager에서 다음과 같이 선택합니다.
+
+1. 장치: `Raspberry Pi 4`
+2. 운영체제: `Raspberry Pi OS Lite (64-bit)`
+3. 저장 장치: 준비한 microSD 카드
+
+운영체제 설정 화면에서는 다음 항목을 입력합니다.
+
+- 호스트 이름: `equipment-pi`
+- 사용자 이름: 원하는 영문 이름. 예: `equipment`
+- 비밀번호: 잊어버리지 않을 비밀번호
+- Wi-Fi 이름과 비밀번호
+- 국가: `KR`
+- 시간대: `Asia/Seoul`
+- SSH: 활성화
+- SSH 인증: 비밀번호 인증
+
+설정을 저장하고 microSD 카드에 운영체제를 기록합니다. Raspberry Pi 공식 문서에서도 화면 없는 설치를 할 때 Imager에서 사용자, Wi-Fi, 호스트 이름과 SSH를 미리 설정할 수 있다고 안내합니다.
+
+## 1-2. 카메라와 microSD 카드 연결
+
+1. Raspberry Pi 전원선을 뽑습니다.
+2. 카메라 리본 케이블을 카메라 단자에 연결합니다.
+3. microSD 카드를 삽입합니다.
+4. 가능하면 유선 LAN도 연결합니다.
+5. 마지막에 전원을 연결합니다.
+6. 첫 부팅이 끝나도록 2~3분 기다립니다.
+
+카메라 케이블은 반드시 전원이 꺼진 상태에서 연결하는 것이 안전합니다.
+
+## 1-3. Windows에서 Pi에 접속
+
+Windows에서 시작 메뉴를 열고 `PowerShell`을 실행합니다.
+
+사용자 이름을 Imager에서 정한 이름으로 바꿔 입력합니다.
+
+```powershell
+ssh <PI_USER>@equipment-pi.local
+```
+
+예시:
+
+```powershell
+ssh equipment@equipment-pi.local
+```
+
+처음 접속할 때 연결을 계속할지 묻는 메시지가 나오면 다음을 입력합니다.
+
+```text
+yes
+```
+
+그다음 Imager에서 설정한 Pi 비밀번호를 입력합니다.
+
+`equipment-pi.local`로 연결되지 않으면 공유기 관리 화면에서 Pi의 IP를 확인한 뒤 다음처럼 접속합니다.
+
+```powershell
+ssh <PI_USER>@<PI_IP>
+```
+
+로그인 후 다음과 비슷한 줄이 보이면 Pi 터미널에 들어온 것입니다.
+
+```text
+equipment@equipment-pi:~ $
+```
+
+이제부터 `bash`라고 적힌 명령은 이 Pi 터미널에 입력합니다.
+
+> 학교 Wi-Fi는 기기끼리 통신을 차단할 수 있습니다. 처음 설치할 때는 집 공유기나 휴대전화 핫스팟을 이용하면 문제를 구분하기 쉽습니다.
+
+---
+
+# 2부. 카메라가 정상인지 확인하기
+
+Pi 터미널에서 프로그램 목록을 갱신하고 필요한 프로그램을 설치합니다.
 
 ```bash
 sudo apt update
 sudo apt upgrade -y
 sudo apt install -y git python3-venv python3-picamera2 python3-opencv rpicam-apps
-rpicam-still -o camera-test.jpg
 ```
 
-`camera-test.jpg`가 정상이어야 웹 프로그램도 카메라를 사용할 수 있습니다. USB 카메라는 `ls -l /dev/video*`로 장치 번호를 확인합니다.
+설치에는 몇 분 이상 걸릴 수 있습니다. 오류 없이 다시 입력할 수 있는 줄이 나타나면 완료된 것입니다.
 
-### 2. 저장소와 가상환경 설치
-
-저장소가 비공개이므로 GitHub 로그인 또는 deploy key가 필요합니다.
+공식 Raspberry Pi 카메라라면 다음 명령으로 사진을 찍습니다.
 
 ```bash
-cd /opt
-sudo git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
-sudo chown -R "$USER":"$USER" /opt/raspberry-pi-equipment-manager
-cd /opt/raspberry-pi-equipment-manager
+rpicam-still --output camera-test.jpg
+```
 
+촬영 파일이 생겼는지 확인합니다.
+
+```bash
+ls -lh camera-test.jpg
+```
+
+다음처럼 파일 크기가 표시되면 카메라가 동작한 것입니다.
+
+```text
+-rw-r--r-- 1 equipment equipment 2.1M ... camera-test.jpg
+```
+
+Raspberry Pi OS Bookworm 이후 버전에서는 카메라 명령이 `libcamera-*`가 아니라 `rpicam-*`로 시작합니다.
+
+USB 웹캠을 사용할 경우 다음 명령으로 장치가 있는지 확인합니다.
+
+```bash
+ls -l /dev/video*
+```
+
+`/dev/video0`이 보이면 보통 카메라 번호는 `0`입니다.
+
+카메라 시험이 실패했다면 프로그램 설치를 계속하기 전에 [카메라 문제 해결](#카메라를-찾지-못합니다) 항목을 먼저 확인합니다.
+
+---
+
+# 3부. 프로젝트 내려받기
+
+## 3-1. GitHub 저장소 복제
+
+Pi 터미널에서 홈 폴더로 이동합니다.
+
+```bash
+cd ~
+```
+
+프로젝트를 내려받습니다.
+
+```bash
+git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
+```
+
+현재 저장소는 비공개입니다. GitHub 로그인을 요구하면 다음 값을 입력합니다.
+
+- `Username`: 자신의 GitHub 사용자명
+- `Password`: GitHub 계정 비밀번호가 아니라 Personal Access Token
+
+토큰은 GitHub의 [Personal Access Token 안내](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)를 따라 만듭니다. 토큰에는 이 저장소를 읽을 수 있는 최소 권한만 주고, 토큰을 명령어나 소스 파일에 직접 적지 않습니다.
+
+성공하면 폴더로 이동합니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+```
+
+파일이 내려받아졌는지 확인합니다.
+
+```bash
+ls
+```
+
+다음 이름들이 보이면 정상입니다.
+
+```text
+README.md  equipment_manager  scripts  training  requirements-pi.txt
+```
+
+## 3-2. 프로젝트 전용 Python 환경 만들기
+
+다음 명령을 차례대로 실행합니다.
+
+```bash
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements-pi.txt
+```
+
+패키지 설치는 Raspberry Pi 4에서 오래 걸릴 수 있습니다. 중간에 전원을 끄지 않습니다.
+
+명령줄 앞에 `(.venv)`가 보이면 프로젝트 전용 환경이 활성화된 것입니다.
+
+```text
+(.venv) equipment@equipment-pi:~/raspberry-pi-equipment-manager $
+```
+
+나중에 새 터미널을 열었을 때 `(.venv)`가 없다면 프로젝트 폴더에서 다음 명령을 다시 실행합니다.
+
+```bash
+source .venv/bin/activate
+```
+
+---
+
+# 4부. 설정 파일 만들기
+
+프로젝트 폴더와 가상환경이 활성화된 상태에서 실행합니다.
+
+```bash
 python scripts/create_env.py
 ```
 
-`--system-site-packages`는 Raspberry Pi OS의 Picamera2/libcamera 모듈을 가상환경에서 사용하기 위해 필요합니다.
+다음 세 가지가 출력됩니다.
 
-### 3. 학습 모델 복사
+- `.env` 파일 생성 위치
+- 관리자 비밀번호
+- 스테이션 PIN
 
-다음 중 하나로 배치합니다.
+관리자 비밀번호와 PIN은 종이나 비밀번호 관리 앱에 기록합니다. 이 값은 웹사이트 로그인에 사용합니다.
 
-```text
-models/best.pt
+`.env`는 비밀번호가 들어 있으므로 다른 사람에게 보내거나 GitHub에 올리지 않습니다.
 
-models/best_ncnn_model/
-  model.ncnn.bin
-  model.ncnn.param
-  metadata.yaml
-```
+---
 
-Windows PC에서 Pi로 NCNN 모델을 복사하는 예시입니다.
+# 5부. 모델이 없을 때 웹사이트부터 확인하기
 
-```powershell
-scp -r models\best_ncnn_model <PI_USER>@<PI_IP>:/opt/raspberry-pi-equipment-manager/models/
-```
-
-Ultralytics는 ARM CPU에서 NCNN을 성능 선택지로 안내합니다. 직접 학습한 모델은 정확도와 속도를 모두 비교한 뒤 결정합니다.
-
-### 4. 실제 모드 설정
+모델이 아직 없다면 기본 `mock` 모드로 웹사이트와 대여·반납을 먼저 확인할 수 있습니다.
 
 ```bash
+python -m waitress --listen=0.0.0.0:8080 --threads=2 wsgi:app
+```
+
+다음 메시지가 보이면 웹 서버가 실행된 것입니다.
+
+```text
+Serving on http://0.0.0.0:8080
+```
+
+웹 서버를 실행한 터미널은 그대로 둡니다. 같은 네트워크의 PC나 스마트폰에서 다음 주소를 엽니다.
+
+```text
+http://equipment-pi.local:8080
+```
+
+접속되지 않으면 Pi에서 `hostname -I`를 실행해 IP를 확인합니다.
+
+```bash
+hostname -I
+```
+
+예를 들어 `192.168.0.25`가 출력되면 브라우저 주소는 다음과 같습니다.
+
+```text
+http://192.168.0.25:8080
+```
+
+서버를 종료할 때는 Pi 터미널에서 `Ctrl+C`를 누릅니다.
+
+`mock` 모드는 화면에서 기자재를 직접 선택해 인식 결과를 흉내 냅니다. 카메라가 실제로 판단하는 모드는 아닙니다.
+
+---
+
+# 6부. 학습 모델을 Raspberry Pi로 복사하기
+
+이미 모델이 Pi의 `models` 폴더에 있다면 [7부로 이동](#7부-실제-카메라-인식-모드로-변경하기)합니다.
+
+Windows PC에서 모델이 들어 있는 폴더를 엽니다. 폴더의 빈 곳에서 `Shift`를 누른 채 마우스 오른쪽 버튼을 누르고 PowerShell 또는 터미널을 엽니다.
+
+## 6-1. `best.pt`를 복사하는 경우
+
+Windows PowerShell에서 실행합니다.
+
+```powershell
+scp "<모델이_있는_경로>\best.pt" <PI_USER>@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
+```
+
+예시:
+
+```powershell
+scp "C:\Users\student\Downloads\best.pt" equipment@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
+```
+
+## 6-2. NCNN 모델 폴더를 복사하는 경우
+
+```powershell
+scp -r "<모델이_있는_경로>\best_ncnn_model" <PI_USER>@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
+```
+
+예시:
+
+```powershell
+scp -r "C:\Users\student\Downloads\best_ncnn_model" equipment@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
+```
+
+Pi 비밀번호를 입력한 뒤 복사가 끝날 때까지 기다립니다.
+
+Pi 터미널로 돌아가 모델을 확인합니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+ls -la models
+```
+
+`best.pt` 또는 `best_ncnn_model`이 보이면 복사된 것입니다.
+
+> NCNN 모델은 Raspberry Pi CPU에서 속도를 줄이는 선택지가 될 수 있습니다. 같은 사진으로 `best.pt`와 NCNN의 정확도와 속도를 비교한 뒤 선택합니다.
+
+---
+
+# 7부. 실제 카메라 인식 모드로 변경하기
+
+Pi 터미널에서 설정 파일을 엽니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
 nano .env
 ```
 
-공식 Pi 카메라와 NCNN 모델 기준 권장 시작값입니다.
+방향키로 이동해 아래 항목을 찾고 수정합니다.
+
+## 7-1. NCNN 모델과 공식 Pi 카메라를 사용하는 설정
 
 ```dotenv
 DETECTOR_MODE=yolo
@@ -131,74 +414,264 @@ MEMORY_WARNING_MB=1200
 GPIO_ENABLED=false
 ```
 
-별칭의 왼쪽은 학습 `data.yaml` 클래스명, 오른쪽은 관리자 화면의 기자재명입니다. 바깥쪽 작은따옴표도 유지해야 systemd에서 JSON의 큰따옴표가 보존됩니다. 이름이 정확히 일치해야 재고와 연결됩니다. `best.pt`는 `YOLO_MODEL_PATH=models/best.pt`로 바꿉니다.
+## 7-2. `best.pt`를 사용하는 경우
 
-USB 카메라는 다음 설정을 사용합니다.
+위 설정에서 모델 경로 한 줄만 다음처럼 바꿉니다.
+
+```dotenv
+YOLO_MODEL_PATH=models/best.pt
+```
+
+## 7-3. USB 카메라를 사용하는 경우
+
+카메라 부분을 다음처럼 바꿉니다.
 
 ```dotenv
 CAMERA_BACKEND=opencv
 CAMERA_INDEX=0
 ```
 
-### 5. 모델·카메라 사전 점검
+## 7-4. 클래스 별칭 수정
 
-기자재 하나를 카메라 앞에 놓고 실행합니다.
+아래 줄은 모델의 이름과 웹사이트의 기자재 이름을 연결합니다.
+
+```dotenv
+YOLO_CLASS_ALIASES='{"multimeter":"멀티미터","arduino":"아두이노","breadboard":"브레드보드"}'
+```
+
+왼쪽 이름은 YOLO를 학습할 때 `data.yaml`에 작성한 클래스 이름입니다. 오른쪽 이름은 웹 관리자 화면에 등록된 기자재 이름입니다.
+
+예를 들어 모델 클래스가 다음과 같다면:
+
+```yaml
+names:
+  0: meter
+  1: uno
+```
+
+설정은 다음처럼 작성합니다.
+
+```dotenv
+YOLO_CLASS_ALIASES='{"meter":"멀티미터","uno":"아두이노"}'
+```
+
+바깥쪽 작은따옴표와 안쪽 큰따옴표를 지우지 않습니다.
+
+## 7-5. nano에서 저장하기
+
+수정을 완료한 뒤 다음 순서로 누릅니다.
+
+1. `Ctrl+O`: 저장
+2. `Enter`: 파일 이름 확인
+3. `Ctrl+X`: nano 종료
+
+---
+
+# 8부. 실제 모델과 카메라 점검하기
+
+카메라 앞에 인식할 기자재 하나만 놓습니다. 배경을 단순하게 하고 물체 전체가 화면에 들어오게 합니다.
+
+Pi 터미널에서 실행합니다.
 
 ```bash
-cd /opt/raspberry-pi-equipment-manager
+cd ~/raspberry-pi-equipment-manager
 source .venv/bin/activate
 python scripts/pi_diagnostics.py
 ```
 
-모델 로딩, 카메라 해상도, 감지 결과, 실행 시간과 RSS가 출력됩니다. 물체가 없어도 프레임 촬영과 모델 추론이 성공하면 장치 점검은 통과합니다.
+정상일 때는 다음과 비슷하게 출력됩니다.
 
-### 6. 반복 추론과 메모리 검사
+```text
+=== Raspberry Pi 실제 장치 사전 점검 ===
+[통과] YOLO 모델 로딩
+[통과] 카메라 프레임: 640x480
+[통과] 현재 물체: 멀티미터 (91.2%)
+전체 사전 점검 시간: 2.31초
+점검 후 RSS: 430.5 MB
+```
 
-같은 기자재를 놓은 채 먼저 50회, 최종 배포 전에는 200회 이상 확인합니다.
+물체가 검출되지 않아도 카메라 프레임과 모델 실행이 정상이라면 다음 안내가 나올 수 있습니다.
+
+```text
+[안내] 현재 프레임에서 물체는 검출되지 않았지만 카메라와 모델 실행은 정상입니다.
+```
+
+이 경우 카메라와 프로그램 연결은 성공했지만 학습 데이터, 조명, 거리 또는 신뢰도 설정을 조정해야 합니다.
+
+`[실패]`가 나오면 오류 문장을 복사해 [문제 해결](#문제-해결)에서 같은 내용을 찾습니다.
+
+---
+
+# 9부. 메모리가 계속 늘어나지 않는지 확인하기
+
+Raspberry Pi 4B 2GB는 메모리가 적으므로 실제 모델로 반복 검사를 해야 합니다.
+
+카메라 앞에 기자재를 놓고 먼저 50회 검사합니다.
 
 ```bash
 python scripts/memory_soak_test.py --scans 50 --interval 0.3 --max-growth-mb 120
+```
+
+마지막에 다음과 비슷하게 나오면 설정한 기준을 통과한 것입니다.
+
+```text
+최고 RSS: 470.2 MB / 종료 RSS: 435.8 MB / 증가량: 5.3 MB
+통과: RSS 증가량이 설정 기준 이내입니다.
+```
+
+최종 배포 전에는 200회도 확인합니다.
+
+```bash
 python scripts/memory_soak_test.py --scans 200 --interval 0.5 --max-growth-mb 120
 ```
 
-스크립트는 모델·카메라를 예열한 뒤 기준 RSS를 잡으므로 최초 모델 로딩 메모리를 누수로 계산하지 않습니다. 종료 RSS 증가량이 계속 커지거나 기준을 넘으면 배포를 중단하고 전체 출력을 확인합니다.
+프로그램은 모델과 카메라를 먼저 예열한 다음 기준 메모리를 측정합니다. 최초 모델 로딩에 필요한 정상적인 메모리를 누수로 잘못 계산하지 않습니다.
 
-### 7. 웹 서버 수동 실행
+---
+
+# 10부. 웹사이트 실제 실행하기
+
+진단과 메모리 검사를 통과한 뒤 실행합니다.
 
 ```bash
 MALLOC_ARENA_MAX=2 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 \
 python -m waitress --listen=0.0.0.0:8080 --threads=2 wsgi:app
 ```
 
-다른 터미널에서 주소를 봅니다.
+정상 메시지:
 
-```bash
-cd /opt/raspberry-pi-equipment-manager
-source .venv/bin/activate
-python scripts/network_info.py
+```text
+Serving on http://0.0.0.0:8080
 ```
 
-같은 네트워크의 PC나 스마트폰에서 `http://<PI_IP>:8080`을 엽니다. 종료는 서버 터미널의 `Ctrl+C`입니다.
+다른 PC나 스마트폰 브라우저에서 엽니다.
 
-2GB Pi에서 worker 프로세스를 여러 개 띄우면 프로세스마다 모델이 복제됩니다. 이 프로젝트는 **프로세스 1개, Waitress 스레드 2개, 동시 추론 1개**를 전제로 합니다.
+```text
+http://equipment-pi.local:8080
+```
 
-### 8. 부팅 자동 실행
+또는 Pi의 IP를 사용합니다.
 
-수동 실행을 확인한 뒤 설치합니다.
+```text
+http://<PI_IP>:8080
+```
+
+메뉴 용도:
+
+- `현황`: 누구나 현재 수량 확인
+- `대여·반납`: 스테이션 PIN으로 로그인한 뒤 카메라 인식
+- `관리자`: 관리자 비밀번호로 로그인해 종류·수량·기록 관리
+
+2GB Pi에서는 서버 프로세스를 여러 개 실행하지 않습니다. 현재 설정은 서버 프로세스 1개, 웹 스레드 2개, 동시 YOLO 추론 1개를 사용합니다.
+
+---
+
+# 11부. 전원을 켜면 자동 실행되게 만들기
+
+수동 웹 실행을 먼저 확인하고 `Ctrl+C`로 종료합니다. 그다음 실행합니다.
 
 ```bash
 sudo bash deploy/install_service.sh
+```
+
+설치가 끝나면 상태를 확인합니다.
+
+```bash
 sudo systemctl status equipment-manager.service
 ```
 
-설치기가 현재 사용자·저장소 경로를 적용하고 `.env`를 root 전용 `/etc/equipment-manager.env`로 복사합니다. 서비스는 수치 연산 스레드를 제한하며 메모리 완화 기준 1300MB, 강제 상한 1600MB, 작업 수 상한 64를 적용합니다.
+아래 문구가 보이면 실행 중입니다.
 
-로그와 업데이트:
+```text
+Active: active (running)
+```
+
+상태 화면에서 빠져나오려면 `q`를 누릅니다.
+
+웹 서버 로그를 실시간으로 보려면 다음을 실행합니다.
 
 ```bash
 journalctl -u equipment-manager.service -f
+```
 
-cd /opt/raspberry-pi-equipment-manager
+로그 화면은 `Ctrl+C`로 종료합니다. 서비스를 설치한 뒤에는 SSH 연결을 닫아도 웹사이트가 계속 실행되고, Pi를 재부팅해도 자동으로 시작합니다.
+
+서비스를 다시 시작하거나 멈추는 명령:
+
+```bash
+sudo systemctl restart equipment-manager.service
+sudo systemctl stop equipment-manager.service
+sudo systemctl start equipment-manager.service
+```
+
+---
+
+# 12부. 학교에서 실제 사용하는 순서
+
+## 학생이 대여할 때
+
+1. Pi 카메라 앞에 기자재 하나를 놓습니다.
+2. 웹사이트에서 `대여·반납`을 누릅니다.
+3. 스테이션 PIN으로 로그인합니다.
+4. 학번을 입력합니다.
+5. `대여`를 선택합니다.
+6. 수량을 입력합니다.
+7. `객체 인식 시작`을 누릅니다.
+8. 인식된 이름이 실제 물체와 같은지 확인합니다.
+9. `이 결과로 처리`를 누릅니다.
+10. 현황 화면에서 사용 가능 수량이 줄었는지 확인합니다.
+
+## 학생이 반납할 때
+
+같은 순서에서 `반납`을 선택합니다. 해당 학번이 빌린 수량보다 많이 반납할 수는 없습니다.
+
+## 관리자가 할 일
+
+1. `관리자` 메뉴에서 로그인합니다.
+2. 실제 보유 수량을 등록하거나 수정합니다.
+3. 미반납 학생과 거래 기록을 확인합니다.
+4. 잘못 입력된 거래는 삭제하지 않고 `취소`합니다.
+5. 필요하면 CSV로 기록을 내려받습니다.
+
+---
+
+# 13부. 학교의 다른 장소에서 접속하기
+
+같은 학교 안에서도 네트워크가 다음처럼 분리되어 있을 수 있습니다.
+
+- 학생 Wi-Fi
+- 교사용 Wi-Fi
+- 실습실 유선망
+- 게스트 Wi-Fi
+- 층별 또는 교실별 VLAN
+
+아래 장소에서 `http://<PI_IP>:8080` 접속을 하나씩 확인합니다.
+
+1. Pi와 같은 실습실
+2. 다른 교실
+3. 다른 층
+4. 학생 Wi-Fi 스마트폰
+5. 교사용 Wi-Fi 기기
+6. 유선 LAN PC
+
+같은 실습실에서는 되지만 다른 장소에서만 안 되면 코드 문제가 아니라 학교 방화벽이나 VLAN 문제일 가능성이 큽니다.
+
+학교 전산 담당자에게 다음을 요청합니다.
+
+- Raspberry Pi 고정 IP 또는 DHCP 예약
+- 필요한 내부망 사이의 TCP 8080 통신 허용
+- 교내 Raspberry Pi 웹 서버 운영 허가
+
+Raspberry Pi의 8080 포트를 외부 인터넷에 직접 개방하지 않습니다. 학교 밖에서도 접속해야 한다면 학교가 승인한 VPN이나 별도 중앙 서버가 필요합니다.
+
+---
+
+# 14부. 프로그램 업데이트와 백업
+
+## GitHub의 새 코드 받기
+
+```bash
+cd ~/raspberry-pi-equipment-manager
 git pull
 source .venv/bin/activate
 python -m pip install -r requirements-pi.txt
@@ -206,30 +679,211 @@ python -m unittest discover -s tests -v
 sudo bash deploy/install_service.sh
 ```
 
-서비스 제거 시 설정 백업 `/etc/equipment-manager.env`는 남겨 둡니다.
+비공개 저장소 인증을 다시 요구하면 GitHub 사용자명과 Personal Access Token을 입력합니다.
+
+## DB 백업
 
 ```bash
-sudo systemctl disable --now equipment-manager.service
-sudo rm /etc/systemd/system/equipment-manager.service
-sudo systemctl daemon-reload
+cd ~/raspberry-pi-equipment-manager
+source .venv/bin/activate
+python scripts/backup_db.py
 ```
 
-## 학습 사진을 Pi 카메라로 수집하기
+백업 파일은 `backups` 폴더에 생깁니다. 중요한 운영 전후에는 이 폴더를 다른 PC나 USB 저장장치에도 복사합니다.
 
-한 종류만 촬영 구역에 두고 실행합니다.
+---
+
+# 15부. 학습 사진 모으기
+
+Pi 카메라로 학습용 원본 사진을 자동 촬영할 수 있습니다.
+
+멀티미터를 하나만 놓고 실행합니다.
 
 ```bash
+cd ~/raspberry-pi-equipment-manager
 source .venv/bin/activate
 python scripts/capture_samples.py multimeter --count 250 --interval 0.5
+```
+
+다른 종류도 같은 방식으로 촬영합니다.
+
+```bash
 python scripts/capture_samples.py arduino --count 250 --interval 0.5
 python scripts/capture_samples.py breadboard --count 250 --interval 0.5
 ```
 
-사진은 `datasets/raw/<클래스명>/`에 저장되며 Git에 올라가지 않습니다. 각도·거리·배경·조명·일부 가림을 바꿉니다. 같은 연속 촬영 묶음을 train과 val 양쪽에 나누지 않습니다.
+사진은 다음 폴더에 저장됩니다.
 
-`training/dataset_example.yaml`과 Colab 노트북을 사용해 라벨링 데이터로 학습합니다. 처음에는 3~5종, 종류당 200~500장으로 시작하고 실제 카메라 설치 위치 사진을 반드시 포함합니다.
+```text
+datasets/raw/multimeter/
+datasets/raw/arduino/
+datasets/raw/breadboard/
+```
 
-## Windows에서 웹 기능만 시험하기
+촬영할 때 물체의 각도, 거리, 배경, 조명을 계속 조금씩 바꿉니다. 실제 학교에서 카메라를 설치할 위치와 비슷한 사진도 포함합니다.
+
+촬영한 사진은 라벨링한 뒤 `training/YOLO_기자재_학습_Colab.ipynb`로 학습합니다. 모델 클래스명은 영문 소문자로 단순하게 만드는 것을 권장합니다.
+
+---
+
+# 문제 해결
+
+## `git clone`에서 로그인이 실패합니다
+
+GitHub 계정 비밀번호는 Git 명령의 비밀번호로 사용할 수 없습니다. 사용자명에는 GitHub 사용자명을, 비밀번호 자리에는 저장소 읽기 권한이 있는 Personal Access Token을 입력합니다.
+
+다음 오류는 주소가 틀렸거나 계정에 비공개 저장소 접근 권한이 없을 때도 발생합니다.
+
+```text
+Repository not found
+```
+
+저장소 주소와 로그인한 GitHub 계정을 확인합니다.
+
+## `No module named ...` 오류가 나옵니다
+
+프로젝트 폴더로 이동하고 가상환경을 켭니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+source .venv/bin/activate
+python -m pip install -r requirements-pi.txt
+```
+
+## `externally-managed-environment`가 나옵니다
+
+가상환경이 활성화되지 않은 상태입니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+source .venv/bin/activate
+```
+
+명령줄 앞에 `(.venv)`가 생긴 뒤 다시 설치합니다.
+
+## 카메라를 찾지 못합니다
+
+먼저 자동 웹 서비스를 멈춥니다. 웹 서비스와 진단 프로그램이 카메라를 동시에 사용할 수 없기 때문입니다.
+
+```bash
+sudo systemctl stop equipment-manager.service
+rpicam-still --output camera-test.jpg
+```
+
+그래도 실패하면 다음을 확인합니다.
+
+- 카메라 케이블 방향
+- 커넥터 잠금
+- 카메라가 전원을 끈 상태에서 연결되었는지
+- 다른 카메라 프로그램이 실행 중인지
+- 공식 카메라인데 `.env`가 `CAMERA_BACKEND=picamera2`인지
+- USB 카메라인데 `.env`가 `CAMERA_BACKEND=opencv`인지
+
+점검 후 서비스를 다시 시작합니다.
+
+```bash
+sudo systemctl start equipment-manager.service
+```
+
+## `YOLO 모델을 찾을 수 없습니다`가 나옵니다
+
+모델과 설정을 확인합니다.
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+ls -la models
+grep YOLO_MODEL_PATH .env
+```
+
+예를 들어 실제 파일이 `models/best.pt`라면 설정도 정확히 다음이어야 합니다.
+
+```dotenv
+YOLO_MODEL_PATH=models/best.pt
+```
+
+## 인식은 되지만 DB 기자재와 연결되지 않습니다
+
+오류에 표시된 모델 클래스명과 관리자 화면의 기자재명을 확인합니다.
+
+```bash
+grep YOLO_CLASS_ALIASES .env
+```
+
+별칭의 왼쪽은 모델 클래스명, 오른쪽은 웹사이트 기자재명입니다. 대소문자와 공백도 정확히 맞아야 합니다.
+
+## 물체를 자주 잘못 인식합니다
+
+다음 순서로 확인합니다.
+
+1. 카메라 앞에 기자재를 한 종류만 놓습니다.
+2. 단색 배경과 일정한 조명을 사용합니다.
+3. 물체 전체가 화면 안에 들어오게 합니다.
+4. 실제 설치 위치 사진을 학습 데이터에 추가합니다.
+5. 오인식된 장면을 다시 촬영하고 라벨링합니다.
+6. 모델을 다시 학습합니다.
+
+무조건 신뢰도 기준만 높이면 미검출이 늘어날 수 있으므로 실제 사진으로 비교합니다.
+
+## `Address already in use`가 나옵니다
+
+이미 자동 서비스가 8080 포트를 사용 중일 수 있습니다.
+
+```bash
+sudo systemctl status equipment-manager.service
+```
+
+수동으로 실행하려면 서비스를 먼저 멈춥니다.
+
+```bash
+sudo systemctl stop equipment-manager.service
+```
+
+## 웹사이트가 다른 PC에서 열리지 않습니다
+
+Pi 자체에서 먼저 확인합니다.
+
+```bash
+curl http://127.0.0.1:8080/healthz
+hostname -I
+```
+
+`"ok":true`가 보이면 프로그램은 실행 중입니다. 같은 네트워크에서도 접속이 안 되면 IP 주소, 공유기 AP 격리, 학교 방화벽과 VLAN을 확인합니다.
+
+## 재부팅 후 자동 실행되지 않습니다
+
+```bash
+sudo systemctl status equipment-manager.service
+journalctl -u equipment-manager.service -n 100 --no-pager
+```
+
+출력된 마지막 오류부터 확인합니다. `.env`를 수정했다면 다시 설치해 설정을 반영합니다.
+
+```bash
+sudo bash deploy/install_service.sh
+```
+
+## 메모리 검사에 실패합니다
+
+```bash
+python scripts/memory_soak_test.py --scans 200 --interval 0.5
+```
+
+종료 RSS가 계속 커지면 다음 값을 순서대로 낮춰 비교합니다.
+
+```dotenv
+YOLO_IMAGE_SIZE=320
+YOLO_FRAME_COUNT=3
+CAMERA_WIDTH=640
+CAMERA_HEIGHT=480
+```
+
+서버 프로세스를 두 개 이상 실행하지 않습니다. 자동 서비스가 실행 중일 때 별도의 수동 서버를 함께 실행하지 않습니다.
+
+---
+
+# Windows에서 카메라 없이 기능 시험하기
+
+Windows PowerShell에서 실행합니다.
 
 ```powershell
 git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
@@ -243,107 +897,91 @@ python scripts\create_env.py
 python -m waitress --listen=0.0.0.0:8080 --threads=2 wsgi:app
 ```
 
-기본값은 `DETECTOR_MODE=mock`입니다. `http://127.0.0.1:8080`에서 카메라 없이 업무 흐름을 확인할 수 있습니다.
+브라우저에서 다음 주소를 엽니다.
 
-## 주소와 권한
-
-| 주소 | 권한 | 기능 |
-|---|---|---|
-| `/` | 공개 | 재고와 장치 상태 |
-| `/station/login` | 공개 | 스테이션 PIN 로그인 |
-| `/scan` | 스테이션 | 인식과 대여·반납 |
-| `/admin/login` | 공개 | 관리자 로그인 |
-| `/admin` | 관리자 | 미반납·거래·재고 관리 |
-| `/admin/export.csv` | 관리자 | 거래 CSV |
-| `/api/status` | 공개 | 현황·RSS·추론 상태 JSON |
-| `/healthz` | 공개 | 서버·DB 검사 |
-
-공개 화면에는 학번을 표시하지 않습니다.
-
-## 데이터, GPIO, 네트워크
-
-첫 실행 시 `instance/equipment.db`가 생성됩니다. `DEFAULT_EQUIPMENT`와 `DEFAULT_QUANTITY`는 최초 생성 때만 적용됩니다. 백업은 다음 명령으로 `backups/`에 만듭니다.
-
-```bash
-python scripts/backup_db.py
+```text
+http://127.0.0.1:8080
 ```
 
-GPIO 기본 BCM 핀은 초록 LED 17, 빨간 LED 27, 부저 22입니다. 저항과 전압을 확인한 뒤 활성화합니다.
+Windows 기본 설정은 `mock` 모드이므로 실제 카메라가 없어도 됩니다.
 
-```dotenv
-GPIO_ENABLED=true
-GPIO_GREEN_PIN=17
-GPIO_RED_PIN=27
-GPIO_BUZZER_PIN=22
+---
+
+# 기술 설명
+
+## 메모리 사용을 줄이기 위해 적용한 내용
+
+- YOLO 모델은 매 요청마다 만들지 않고 프로세스당 한 번만 불러옵니다.
+- 카메라도 인식마다 열고 닫지 않고 한 번 연결한 뒤 재사용합니다.
+- 한 번에 하나의 YOLO 추론만 실행합니다.
+- Ultralytics 결과를 `stream=True`로 받고 사용 직후 스트림 참조를 해제합니다.
+- Picamera2 버퍼를 2개로 제한하고 오래된 프레임을 큐에 쌓지 않습니다.
+- GPIO 요청마다 새 스레드를 만들지 않고 고정 worker 한 개만 사용합니다.
+- 일정 횟수마다 Python 가비지 컬렉션을 실행합니다.
+- heartbeat와 `/healthz`에서 현재 RSS 메모리를 확인합니다.
+- systemd에서 메모리 완화 기준 1300MB와 상한 1600MB를 적용합니다.
+
+## 주요 폴더
+
+```text
+equipment_manager/
+  routes/                 웹 주소와 API
+  vision/camera.py        Picamera2/USB 카메라
+  vision/detector.py      YOLO 인식
+  vision/service.py       추론 잠금과 서비스 수명 관리
+  inventory.py            대여·반납 규칙
+  db.py                   SQLite DB
+  hardware.py             LED와 부저
+deploy/                   자동 실행 설정
+scripts/                  설치·진단·백업 도구
+training/                 Colab 학습 자료
+tests/                    자동 테스트
 ```
 
-학교 내부라도 학생 Wi-Fi, 교사용 Wi-Fi, 유선망이 다른 VLAN이면 서로 접속하지 못합니다. 같은 실습실, 다른 교실·층, 학생 Wi-Fi, 교사용 Wi-Fi, 유선 PC에서 각각 시험합니다. 안 되면 전산 담당자에게 Pi 고정 IP/DHCP 예약과 내부망 사이 TCP 8080 허용을 요청합니다. Pi를 인터넷에 직접 공개하지 않습니다.
+## 웹 주소
 
-## 보안과 자동 테스트
+| 주소 | 용도 |
+|---|---|
+| `/` | 공개 기자재 현황 |
+| `/station/login` | 스테이션 PIN 로그인 |
+| `/scan` | 객체 인식과 대여·반납 |
+| `/admin/login` | 관리자 로그인 |
+| `/admin` | 재고·거래·미반납 관리 |
+| `/admin/export.csv` | 거래 CSV 내려받기 |
+| `/api/status` | 현황과 메모리 상태 JSON |
+| `/healthz` | 서버와 DB 상태 검사 |
 
-- `.env`, 실제 DB, 사진, 모델은 Git에 올리지 않습니다.
-- 디버그 서버 대신 Waitress/systemd를 사용합니다.
-- HTTPS가 실제 구성된 경우에만 `SESSION_COOKIE_SECURE=true`로 바꿉니다.
-- 외부 접속은 학교가 승인한 중앙 서버나 VPN을 사용합니다.
+## 자동 테스트
 
 ```bash
 python -m compileall -q equipment_manager scripts tests wsgi.py
 python -m unittest discover -s tests -v
 ```
 
-단위 테스트는 임시 DB와 가짜 카메라·YOLO 결과를 사용합니다. 실제 하드웨어는 Pi에서 진단·반복 검사로 별도 검증해야 합니다.
-
-## 문제 해결
-
-### Picamera2 또는 카메라 오류
-
-```bash
-sudo apt install -y python3-picamera2
-rpicam-still -o camera-test.jpg
-sudo systemctl restart equipment-manager.service
-```
-
-가상환경이 `--system-site-packages`인지, 다른 프로세스가 카메라를 점유하지 않는지 확인합니다.
-
-### 모델 또는 클래스 연결 오류
-
-```bash
-ls -la models
-grep YOLO_MODEL_PATH .env
-```
-
-상대 모델 경로는 프로젝트 루트 기준입니다. `YOLO_CLASS_ALIASES`의 JSON, 대소문자, 공백과 관리자 기자재명을 확인합니다. `.env` 수정 후 systemd에는 `sudo bash deploy/install_service.sh`로 다시 반영합니다.
-
-### 메모리 증가
-
-```bash
-python scripts/memory_soak_test.py --scans 200 --interval 0.5
-curl http://127.0.0.1:8080/healthz
-journalctl -u equipment-manager.service -n 200 --no-pager
-```
-
-서버가 한 프로세스인지 확인합니다. 필요하면 `YOLO_FRAME_COUNT=3`, `YOLO_IMAGE_SIZE=320`, 카메라 `640x480` 이하로 비교합니다.
-
-### 다른 교실에서 접속 불가 또는 재부팅 후 실패
-
-같은 네트워크에서 되고 다른 곳에서만 안 되면 학교 방화벽/VLAN 문제일 가능성이 큽니다. 서비스 문제는 다음으로 확인합니다.
-
-```bash
-sudo systemctl status equipment-manager.service
-journalctl -u equipment-manager.service -n 100 --no-pager
-```
+자동 테스트는 임시 DB와 가짜 카메라 결과를 사용하므로 실제 운영 DB를 바꾸지 않습니다. 실제 카메라와 모델은 `pi_diagnostics.py`와 `memory_soak_test.py`로 확인합니다.
 
 ## 참고 문서
 
-- [Ultralytics 예측 모드와 stream 옵션](https://docs.ultralytics.com/modes/predict/)
+- [Raspberry Pi 처음 설치하기](https://www.raspberrypi.com/documentation/computers/getting-started.html)
+- [Raspberry Pi 카메라 명령](https://www.raspberrypi.com/documentation/computers/camera_software.html)
+- [Picamera2 설명서](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)
+- [GitHub 저장소 복제 방법](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository)
 - [Ultralytics Raspberry Pi 가이드](https://docs.ultralytics.com/guides/raspberry-pi/)
-- [Ultralytics NCNN 통합](https://docs.ultralytics.com/integrations/ncnn/)
-- [Raspberry Pi Picamera2 매뉴얼](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf)
+- [Ultralytics NCNN 안내](https://docs.ultralytics.com/integrations/ncnn/)
+- [Ultralytics 예측과 stream 옵션](https://docs.ultralytics.com/modes/predict/)
 
-## 실물 배포 전에 남은 작업
+---
 
-- 실제 기자재 촬영·라벨링과 Colab 학습
-- Pi에서 `best.pt`와 NCNN 정확도·속도 비교
-- 실제 위치에서 오인식/미검출 시험과 200회 메모리 검사
-- GPIO 실물 배선, 학교 고정 IP와 교실 간 접속 확인
-- 실제 전체 수량 입력과 운영 담당자 지정
+# 최종 배포 전 체크리스트
+
+- [ ] Pi 카메라 시험 사진이 정상이다.
+- [ ] 실제 기자재로 YOLO 모델을 학습했다.
+- [ ] `pi_diagnostics.py`가 통과한다.
+- [ ] 인식 결과와 실제 기자재 이름이 일치한다.
+- [ ] 200회 메모리 반복 검사를 통과한다.
+- [ ] 실제 전체 수량을 관리자 화면에 입력했다.
+- [ ] 관리자 비밀번호와 스테이션 PIN을 기록했다.
+- [ ] DB를 백업했다.
+- [ ] 같은 교실, 다른 교실과 다른 층에서 접속을 시험했다.
+- [ ] 학교 전산 담당자에게 고정 IP와 포트 사용을 확인했다.
+- [ ] 재부팅 후 서비스가 자동 실행되는지 확인했다.
