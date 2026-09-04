@@ -29,6 +29,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.client = self.app.test_client()
 
     def tearDown(self):
+        self.app.extensions["shutdown_services"]()
         self.temp_dir.cleanup()
 
     def login_station(self):
@@ -60,7 +61,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
 
     def test_dashboard_and_health_are_public(self):
         self.assertEqual(self.client.get("/").status_code, 200)
-        self.assertEqual(self.client.get("/healthz").get_json()["ok"], True)
+        health = self.client.get("/healthz").get_json()
+        self.assertEqual(health["ok"], True)
+        self.assertGreater(health["memory_rss_mb"], 0)
+        self.assertIn("busy", health["inference"])
         css_response = self.client.get("/static/style.css")
         js_response = self.client.get("/static/app.js")
         self.assertEqual(css_response.status_code, 200)

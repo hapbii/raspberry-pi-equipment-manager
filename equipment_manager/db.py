@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import current_app, g
@@ -70,10 +70,29 @@ def init_app_database() -> None:
     db.commit()
 
 
-def set_device_status(error: str | None = None) -> None:
+_UNCHANGED = object()
+
+
+def set_device_status(error: str | None | object = _UNCHANGED) -> None:
     db = get_db()
-    db.execute(
-        "UPDATE device_status SET last_seen = ?, last_error = ? WHERE id = 1",
-        (utc_now(), error),
+    if error is _UNCHANGED:
+        db.execute("UPDATE device_status SET last_seen = ? WHERE id = 1", (utc_now(),))
+    else:
+        db.execute(
+            "UPDATE device_status SET last_seen = ?, last_error = ? WHERE id = 1",
+            (utc_now(), error),
+        )
+    db.commit()
+
+
+def cleanup_expired_scan_sessions(retention_hours: int = 24) -> int:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=retention_hours)).isoformat(
+        timespec="seconds"
+    )
+    db = get_db()
+    result = db.execute(
+        "DELETE FROM scan_sessions WHERE expires_at < ? OR consumed_at < ?",
+        (cutoff, cutoff),
     )
     db.commit()
+    return result.rowcount

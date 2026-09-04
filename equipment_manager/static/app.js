@@ -93,6 +93,7 @@
         document.querySelector("#result-name").textContent = data.scan.equipment_name;
         document.querySelector("#result-confidence").textContent = `${(data.scan.confidence * 100).toFixed(1)}%`;
         document.querySelector("#result-votes").textContent = `${data.votes}/${data.frame_count} 프레임 일치`;
+        document.querySelector("#result-duration").textContent = `${(data.duration_ms / 1000).toFixed(2)}초`;
         placeholder.classList.add("hidden");
         resultPanel.classList.remove("hidden");
       } catch (error) {

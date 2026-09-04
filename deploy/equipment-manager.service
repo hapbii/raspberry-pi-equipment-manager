@@ -5,14 +5,22 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/opt/raspberry-pi-equipment-manager
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__APP_DIR__
 EnvironmentFile=-/etc/equipment-manager.env
-ExecStart=/opt/raspberry-pi-equipment-manager/.venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=4 wsgi:app
+Environment=PYTHONUNBUFFERED=1
+Environment=MALLOC_ARENA_MAX=2
+Environment=OMP_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=2
+Environment=MKL_NUM_THREADS=2
+ExecStart=__APP_DIR__/.venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=2 wsgi:app
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15
+MemoryHigh=1300M
+MemoryMax=1600M
+TasksMax=64
 PrivateTmp=true
 NoNewPrivileges=true
 
