@@ -28,6 +28,29 @@ if [[ ! -x "${APP_DIR}/.venv/bin/waitress-serve" ]]; then
   exit 1
 fi
 
+DETECTOR_MODE="$(sed -n 's/^[[:space:]]*DETECTOR_MODE[[:space:]]*=[[:space:]]*//p' "${APP_DIR}/.env" | tail -n 1 | tr -d '\r' | xargs)"
+if [[ "${DETECTOR_MODE}" != "yolo" ]]; then
+  echo ".env의 DETECTOR_MODE=yolo 설정을 완료해야 실제 서비스로 설치할 수 있습니다."
+  exit 1
+fi
+
+MODEL_PATH="$(sed -n 's/^[[:space:]]*YOLO_MODEL_PATH[[:space:]]*=[[:space:]]*//p' "${APP_DIR}/.env" | tail -n 1 | tr -d '\r')"
+MODEL_PATH="${MODEL_PATH#\'}"
+MODEL_PATH="${MODEL_PATH%\'}"
+MODEL_PATH="${MODEL_PATH#\"}"
+MODEL_PATH="${MODEL_PATH%\"}"
+if [[ -z "${MODEL_PATH}" ]]; then
+  echo ".env의 YOLO_MODEL_PATH에 실제 모델 파일 또는 NCNN 폴더를 입력하세요."
+  exit 1
+fi
+if [[ "${MODEL_PATH}" != /* ]]; then
+  MODEL_PATH="${APP_DIR}/${MODEL_PATH}"
+fi
+if [[ ! -e "${MODEL_PATH}" ]]; then
+  echo "YOLO 모델을 찾을 수 없습니다: ${MODEL_PATH}"
+  exit 1
+fi
+
 install -m 600 -o root -g root "${APP_DIR}/.env" /etc/equipment-manager.env
 sed \
   -e "s|__USER__|${APP_USER}|g" \

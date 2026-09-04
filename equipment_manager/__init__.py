@@ -54,12 +54,19 @@ def create_app(test_config: dict | None = None) -> Flask:
             if shutdown_complete:
                 return
             shutdown_complete = True
-            if heartbeat is not None:
-                heartbeat.stop()
-            detection_service.close()
             indicator = app.extensions.get("status_indicator")
-            if indicator is not None:
-                indicator.close()
+            services = [
+                ("heartbeat", heartbeat.stop if heartbeat is not None else None),
+                ("detection", detection_service.close),
+                ("GPIO indicator", indicator.close if indicator is not None else None),
+            ]
+            for name, close_service in services:
+                if close_service is None:
+                    continue
+                try:
+                    close_service()
+                except Exception:
+                    app.logger.exception("Failed to close %s service", name)
 
     if not app.config.get("TESTING", False):
         atexit.register(shutdown_services)

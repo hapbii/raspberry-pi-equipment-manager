@@ -41,7 +41,7 @@ def admin_logout():
 @bp.get("/admin")
 @admin_required
 def admin_page():
-    query = request.args.get("q", "").strip()
+    query = request.args.get("q", "").strip()[:80]
     return render_template(
         "admin.html",
         inventory=list_inventory(),

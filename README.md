@@ -515,7 +515,9 @@ python scripts/memory_soak_test.py --scans 50 --interval 0.3 --max-growth-mb 120
 마지막에 다음과 비슷하게 나오면 설정한 기준을 통과한 것입니다.
 
 ```text
-최고 RSS: 470.2 MB / 종료 RSS: 435.8 MB / 증가량: 5.3 MB
+최고 RSS: 470.2 MB
+서비스 실행 중 마지막 RSS: 435.8 MB / 기준 대비 증가량: 5.3 MB
+앞·뒤 구간 중앙값 증가량: 3.1 MB / 서비스 종료 후 RSS: 210.4 MB
 통과: RSS 증가량이 설정 기준 이내입니다.
 ```
 
@@ -525,7 +527,7 @@ python scripts/memory_soak_test.py --scans 50 --interval 0.3 --max-growth-mb 120
 python scripts/memory_soak_test.py --scans 200 --interval 0.5 --max-growth-mb 120
 ```
 
-프로그램은 모델과 카메라를 먼저 예열한 다음 기준 메모리를 측정합니다. 최초 모델 로딩에 필요한 정상적인 메모리를 누수로 잘못 계산하지 않습니다.
+프로그램은 모델과 카메라를 먼저 예열한 다음 기준 메모리를 측정합니다. 최초 모델 로딩에 필요한 정상적인 메모리를 누수로 잘못 계산하지 않습니다. 누수를 숨기지 않도록 서비스를 닫기 전의 마지막 RSS와 앞·뒤 측정 구간의 중앙값을 모두 비교합니다.
 
 ---
 
@@ -585,6 +587,8 @@ sudo systemctl status equipment-manager.service
 ```text
 Active: active (running)
 ```
+
+설치기는 테스트용 `mock` 모드가 아니라 `DETECTOR_MODE=yolo`인지, 설정한 모델 파일 또는 NCNN 폴더가 실제로 존재하는지 먼저 확인합니다. 조건이 맞지 않으면 자동 서비스를 설치하지 않고 수정할 내용을 화면에 알려줍니다.
 
 상태 화면에서 빠져나오려면 `q`를 누릅니다.
 
@@ -914,10 +918,12 @@ Windows 기본 설정은 `mock` 모드이므로 실제 카메라가 없어도 �
 - YOLO 모델은 매 요청마다 만들지 않고 프로세스당 한 번만 불러옵니다.
 - 카메라도 인식마다 열고 닫지 않고 한 번 연결한 뒤 재사용합니다.
 - 한 번에 하나의 YOLO 추론만 실행합니다.
+- 결과가 이미 확정되면 남은 프레임 추론을 생략합니다.
 - Ultralytics 결과를 `stream=True`로 받고 사용 직후 스트림 참조를 해제합니다.
+- Ultralytics predictor에 남는 마지막 프레임·결과 참조도 추론 직후 비웁니다.
 - Picamera2 버퍼를 2개로 제한하고 오래된 프레임을 큐에 쌓지 않습니다.
 - GPIO 요청마다 새 스레드를 만들지 않고 고정 worker 한 개만 사용합니다.
-- 일정 횟수마다 Python 가비지 컬렉션을 실행합니다.
+- 성공과 실패를 모두 포함해 일정 시도 횟수마다 Python 가비지 컬렉션을 실행합니다.
 - heartbeat와 `/healthz`에서 현재 RSS 메모리를 확인합니다.
 - systemd에서 메모리 완화 기준 1300MB와 상한 1600MB를 적용합니다.
 

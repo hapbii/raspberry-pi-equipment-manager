@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -24,6 +25,7 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=0.3, help="반복 간 대기 시간")
     parser.add_argument("--max-growth-mb", type=float, default=120.0, help="허용할 RSS 증가량")
     args = parser.parse_args()
+    scan_count = max(1, args.scans)
 
     app = create_app({"HEARTBEAT_ENABLED": False})
     if app.config["DETECTOR_MODE"] != "yolo":
@@ -48,13 +50,15 @@ def main() -> int:
     gc.collect()
     baseline = current_rss_mb()
     peak = baseline
+    rss_samples: list[float] = []
     successes = 0
     failures = 0
+    interrupted = False
     print(f"예열 후 기준 RSS: {baseline} MB")
     print("실제 기자재 하나를 촬영 구역에 계속 놓아 두세요.")
 
     try:
-        for index in range(1, max(1, args.scans) + 1):
+        for index in range(1, scan_count + 1):
             try:
                 result = service.detect()
                 successes += 1
@@ -65,19 +69,37 @@ def main() -> int:
             rss = current_rss_mb()
             if rss is not None and (peak is None or rss > peak):
                 peak = rss
-            print(f"{index:03d}/{args.scans} RSS={rss} MB | {summary}")
+            if rss is not None:
+                rss_samples.append(rss)
+            print(f"{index:03d}/{scan_count} RSS={rss} MB | {summary}")
             time.sleep(max(0, args.interval))
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n사용자가 검사를 중지했습니다.")
     finally:
-        service.close()
-        gc.collect()
+        live_final = current_rss_mb()
         app.extensions["shutdown_services"]()
+        gc.collect()
+        after_close = current_rss_mb()
 
-    final = current_rss_mb()
-    growth = None if baseline is None or final is None else final - baseline
+    growth = None if baseline is None or live_final is None else live_final - baseline
+    trend = None
+    if rss_samples:
+        window = min(10, max(1, len(rss_samples) // 4))
+        trend = statistics.median(rss_samples[-window:]) - statistics.median(
+            rss_samples[:window]
+        )
     print(f"\n성공 {successes}회 / 실패 {failures}회")
-    print(f"최고 RSS: {peak} MB / 종료 RSS: {final} MB / 증가량: {growth} MB")
-    if growth is not None and growth > args.max_growth_mb:
-        print("실패: RSS 증가량이 기준을 초과했습니다.")
+    print(f"최고 RSS: {peak} MB")
+    print(f"서비스 실행 중 마지막 RSS: {live_final} MB / 기준 대비 증가량: {growth} MB")
+    print(f"앞·뒤 구간 중앙값 증가량: {trend} MB / 서비스 종료 후 RSS: {after_close} MB")
+    if interrupted:
+        return 130
+    if growth is None or trend is None:
+        print("실패: RSS 값을 읽지 못해 메모리 누수를 판정할 수 없습니다.")
+        return 1
+    if max(growth, trend) > args.max_growth_mb:
+        print("실패: 서비스 실행 중 RSS 증가량이 기준을 초과했습니다.")
         return 1
     print("통과: RSS 증가량이 설정 기준 이내입니다.")
     return 0

@@ -30,11 +30,29 @@ class GpioIndicator:
         except ImportError as exc:
             raise RuntimeError("gpiozero 패키지가 설치되어 있지 않습니다.") from exc
 
-        self.green = LED(green_pin)
-        self.red = LED(red_pin)
-        self.buzzer = Buzzer(buzzer_pin)
-        self._events: queue.Queue[tuple[object, int] | None] = queue.Queue(maxsize=4)
+        devices = []
+        try:
+            green = LED(green_pin)
+            devices.append(green)
+            red = LED(red_pin)
+            devices.append(red)
+            buzzer = Buzzer(buzzer_pin)
+            devices.append(buzzer)
+        except Exception:
+            for device in devices:
+                try:
+                    device.close()
+                except Exception:
+                    logger.debug("GPIO cleanup after initialization failure failed", exc_info=True)
+            raise
+
+        self.green = green
+        self.red = red
+        self.buzzer = buzzer
+        self._events: queue.Queue[tuple[object, int]] = queue.Queue(maxsize=4)
         self._stop_event = threading.Event()
+        self._close_lock = threading.Lock()
+        self._closed = False
         self._worker = threading.Thread(
             target=self._run,
             name="gpio-indicator",
@@ -48,8 +66,6 @@ class GpioIndicator:
                 event = self._events.get(timeout=0.5)
             except queue.Empty:
                 continue
-            if event is None:
-                break
             led, beep_count = event
             try:
                 led.on()
@@ -61,16 +77,24 @@ class GpioIndicator:
                     if self._stop_event.wait(0.08):
                         break
                 self._stop_event.wait(0.45)
+            except Exception:
+                logger.exception("GPIO indicator event failed")
             finally:
-                self.buzzer.off()
-                led.off()
+                for device in (self.buzzer, led):
+                    try:
+                        device.off()
+                    except Exception:
+                        logger.debug("GPIO device off failed", exc_info=True)
                 self._events.task_done()
 
     def _enqueue(self, led, beep_count: int) -> None:
-        try:
-            self._events.put_nowait((led, beep_count))
-        except queue.Full:
-            logger.warning("GPIO indicator queue is full; dropping an event")
+        with self._close_lock:
+            if self._closed:
+                return
+            try:
+                self._events.put_nowait((led, beep_count))
+            except queue.Full:
+                logger.warning("GPIO indicator queue is full; dropping an event")
 
     def success(self) -> None:
         self._enqueue(self.green, 1)
@@ -79,13 +103,19 @@ class GpioIndicator:
         self._enqueue(self.red, 2)
 
     def close(self) -> None:
-        self._stop_event.set()
-        try:
-            self._events.put_nowait(None)
-        except queue.Full:
-            pass
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._stop_event.set()
         if self._worker.is_alive() and threading.current_thread() is not self._worker:
             self._worker.join(timeout=2)
+        while True:
+            try:
+                self._events.get_nowait()
+                self._events.task_done()
+            except queue.Empty:
+                break
         for device in (self.green, self.red, self.buzzer):
             try:
                 device.off()

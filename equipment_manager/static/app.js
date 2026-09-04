@@ -24,9 +24,19 @@
 
   const inventoryGrid = document.querySelector("#inventory-grid");
   if (inventoryGrid) {
+    let dashboardTimer = null;
+    let dashboardStopped = false;
+    let dashboardController = null;
+
     async function refreshDashboard() {
+      const controller = new AbortController();
+      dashboardController = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 4000);
       try {
-        const response = await fetch("/api/status", { cache: "no-store" });
+        const response = await fetch("/api/status", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error);
         data.inventory.forEach((item) => {
@@ -50,11 +60,25 @@
         const dot = document.querySelector("#device-dot");
         dot.className = "status-dot offline";
         document.querySelector("#device-state").textContent = "서버 연결 실패";
-        document.querySelector("#last-seen").textContent = error.message;
+        document.querySelector("#last-seen").textContent = error.name === "AbortError"
+          ? "상태 요청 시간 초과"
+          : error.message;
+      } finally {
+        window.clearTimeout(timeout);
+        dashboardController = null;
+        if (!dashboardStopped) {
+          dashboardTimer = window.setTimeout(refreshDashboard, 5000);
+        }
       }
     }
+
+    window.addEventListener("pagehide", () => {
+      dashboardStopped = true;
+      if (dashboardTimer !== null) window.clearTimeout(dashboardTimer);
+      if (dashboardController !== null) dashboardController.abort();
+    }, { once: true });
+
     refreshDashboard();
-    window.setInterval(refreshDashboard, 5000);
   }
 
   const scanApp = document.querySelector("#scan-app");

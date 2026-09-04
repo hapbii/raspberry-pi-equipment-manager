@@ -231,7 +231,7 @@ def commit_transaction(
 
 
 def list_transactions(limit: int = 100, query: str = "") -> list[dict]:
-    clean_query = query.strip()
+    clean_query = query.strip()[:80]
     params: list = []
     where = ""
     if clean_query:

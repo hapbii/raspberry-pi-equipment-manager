@@ -124,6 +124,12 @@ class OpenCvFrameSource:
     def _ensure_started(self) -> None:
         if self._camera is not None and self._camera.isOpened():
             return
+        stale_camera, self._camera = self._camera, None
+        if stale_camera is not None:
+            try:
+                stale_camera.release()
+            except Exception:
+                logger.debug("Stale OpenCV camera release failed", exc_info=True)
         try:
             import cv2
         except ImportError as exc:
@@ -164,17 +170,19 @@ class OpenCvFrameSource:
 
 def build_frame_source(config: dict) -> FrameSource:
     backend = str(config["CAMERA_BACKEND"]).lower()
+    width = max(160, min(int(config["CAMERA_WIDTH"]), 1920))
+    height = max(120, min(int(config["CAMERA_HEIGHT"]), 1080))
     if backend == "picamera2":
         return Picamera2FrameSource(
-            width=int(config["CAMERA_WIDTH"]),
-            height=int(config["CAMERA_HEIGHT"]),
+            width=width,
+            height=height,
             buffer_count=int(config["CAMERA_BUFFER_COUNT"]),
             warmup_seconds=float(config["CAMERA_WARMUP_SECONDS"]),
         )
     if backend in {"opencv", "usb"}:
         return OpenCvFrameSource(
             index=int(config["CAMERA_INDEX"]),
-            width=int(config["CAMERA_WIDTH"]),
-            height=int(config["CAMERA_HEIGHT"]),
+            width=width,
+            height=height,
         )
     raise DetectionError(f"지원하지 않는 카메라 방식입니다: {backend}")

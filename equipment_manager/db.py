@@ -78,9 +78,10 @@ def set_device_status(error: str | None | object = _UNCHANGED) -> None:
     if error is _UNCHANGED:
         db.execute("UPDATE device_status SET last_seen = ? WHERE id = 1", (utc_now(),))
     else:
+        safe_error = None if error is None else str(error)[:500]
         db.execute(
             "UPDATE device_status SET last_seen = ?, last_error = ? WHERE id = 1",
-            (utc_now(), error),
+            (utc_now(), safe_error),
         )
     db.commit()
 
