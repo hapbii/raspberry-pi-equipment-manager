@@ -2,10 +2,14 @@
 {% block title %}현재 기자재 현황{% endblock %}
 {% block content %}
 <section class="hero compact">
-  <div>
+  <div class="hero-copy">
     <p class="eyebrow">LIVE INVENTORY</p>
     <h1>현재 기자재 현황</h1>
     <p>학교 내부 어디서든 사용 가능한 기자재 수량을 확인할 수 있습니다.</p>
+    <div class="hero-actions">
+      <a class="button primary" href="{{ url_for('web.scan_page') }}">대여·반납 시작</a>
+      <a class="button ghost" href="{{ url_for('web.admin_page') }}">관리자 화면</a>
+    </div>
   </div>
   <div class="device-card">
     <span id="device-dot" class="status-dot unknown"></span>
@@ -13,6 +17,10 @@
   </div>
 </section>
 
+<div class="content-heading">
+  <div><p class="eyebrow">EQUIPMENT</p><h2>기자재별 사용 가능 수량</h2></div>
+  <span class="count-badge">총 {{ inventory|length }}종</span>
+</div>
 <section id="inventory-grid" class="inventory-grid" aria-live="polite">
   {% for item in inventory %}
   <article class="inventory-card" data-equipment-id="{{ item.id }}">
@@ -22,6 +30,12 @@
     <div class="meter"><span style="width: {{ (item.available_qty / item.total_qty * 100) if item.total_qty else 0 }}%"></span></div>
     <p>대여 중 <b class="loaned-number">{{ item.loaned_qty }}</b>개</p>
   </article>
+  {% else %}
+  <div class="empty-state">
+    <strong>등록된 기자재가 없습니다.</strong>
+    <span>관리자 화면에서 첫 기자재를 등록해 주세요.</span>
+    <a class="button primary" href="{{ url_for('web.admin_page') }}">기자재 등록하기</a>
+  </div>
   {% endfor %}
 </section>
 

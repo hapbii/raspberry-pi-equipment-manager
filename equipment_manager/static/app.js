@@ -89,6 +89,8 @@
     const placeholder = document.querySelector("#scan-placeholder");
     const resultPanel = document.querySelector("#scan-result");
     const message = document.querySelector("#scan-message");
+    const studentInput = document.querySelector("#student-id");
+    const quantityInput = document.querySelector("#quantity");
     let scanToken = null;
 
     function showMessage(text, success = false) {
@@ -106,7 +108,13 @@
 
     detectButton.addEventListener("click", async () => {
       resetResult();
+      const quantity = Number(quantityInput.value);
+      if (!studentInput.value.trim()) return showMessage("학번을 먼저 입력해 주세요.");
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+        return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
+      }
       detectButton.disabled = true;
+      detectButton.setAttribute("aria-busy", "true");
       detectButton.textContent = "인식 중...";
       try {
         const mockSelect = document.querySelector("#mock-equipment");
@@ -124,17 +132,19 @@
         showMessage(error.message);
       } finally {
         detectButton.disabled = false;
+        detectButton.removeAttribute("aria-busy");
         detectButton.textContent = "객체 인식 시작";
       }
     });
 
     confirmButton.addEventListener("click", async () => {
-      const studentId = document.querySelector("#student-id").value.trim();
-      const quantity = Number(document.querySelector("#quantity").value);
+      const studentId = studentInput.value.trim();
+      const quantity = Number(quantityInput.value);
       const action = document.querySelector('input[name="action"]:checked')?.value;
       if (!studentId) return showMessage("학번을 입력해 주세요.");
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       confirmButton.disabled = true;
+      confirmButton.setAttribute("aria-busy", "true");
       confirmButton.textContent = "저장 중...";
       try {
         const data = await postJson("/api/transactions", {
@@ -143,6 +153,8 @@
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
         showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다. 현재 사용 가능 ${tx.available_qty}개`, true);
+        studentInput.value = "";
+        quantityInput.value = "1";
         scanToken = null;
         resultPanel.classList.add("hidden");
         placeholder.classList.remove("hidden");
@@ -150,6 +162,7 @@
         showMessage(error.message);
       } finally {
         confirmButton.disabled = false;
+        confirmButton.removeAttribute("aria-busy");
         confirmButton.textContent = "이 결과로 처리";
       }
     });

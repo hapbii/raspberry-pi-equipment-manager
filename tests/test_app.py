@@ -21,7 +21,9 @@ class EquipmentManagerTestCase(unittest.TestCase):
                 "DETECTOR_MODE": "mock",
                 "DEFAULT_EQUIPMENT": ["멀티미터", "아두이노"],
                 "DEFAULT_QUANTITY": 3,
+                "STATION_AUTH_REQUIRED": True,
                 "STATION_PIN": "2468",
+                "ADMIN_USERNAME": "teacher",
                 "ADMIN_PASSWORD": "test-admin",
                 "DUPLICATE_WINDOW_SECONDS": 0,
             }
@@ -37,7 +39,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
 
     def login_admin(self):
-        response = self.client.post("/admin/login", data={"password": "test-admin"})
+        response = self.client.post(
+            "/admin/login",
+            data={"username": "teacher", "password": "test-admin"},
+        )
         self.assertEqual(response.status_code, 302)
 
     def first_equipment(self):
@@ -80,6 +85,26 @@ class EquipmentManagerTestCase(unittest.TestCase):
     def test_scan_requires_station_login(self):
         response = self.client.post("/api/scans", json={"mock_equipment_id": 1})
         self.assertEqual(response.status_code, 401)
+
+    def test_scan_is_open_when_station_auth_is_disabled(self):
+        self.app.config["STATION_AUTH_REQUIRED"] = False
+        self.assertEqual(self.client.get("/scan").status_code, 200)
+        response = self.client.post("/api/scans", json={"mock_equipment_id": 1})
+        self.assertEqual(response.status_code, 200, response.get_json())
+
+    def test_admin_requires_matching_username_and_password(self):
+        rejected = self.client.post(
+            "/admin/login",
+            data={"username": "wrong", "password": "test-admin"},
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertIn("아이디 또는 비밀번호", rejected.get_data(as_text=True))
+        with self.client.session_transaction() as current_session:
+            self.assertFalse(current_session.get("admin_authenticated", False))
+
+        self.login_admin()
+        with self.client.session_transaction() as current_session:
+            self.assertTrue(current_session.get("admin_authenticated", False))
 
     def test_csrf_protects_login_post(self):
         self.app.config["CSRF_ENABLED"] = True

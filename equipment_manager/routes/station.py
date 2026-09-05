@@ -21,6 +21,9 @@ from .common import station_required
 
 @bp.route("/station/login", methods=["GET", "POST"])
 def station_login():
+    if not current_app.config["STATION_AUTH_REQUIRED"]:
+        flash("스테이션 PIN 없이 대여·반납 화면을 사용합니다.", "success")
+        return redirect(url_for("web.scan_page"))
     if request.method == "POST":
         supplied = request.form.get("pin", "")
         if secrets.compare_digest(supplied, current_app.config["STATION_PIN"]):

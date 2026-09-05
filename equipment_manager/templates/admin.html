@@ -12,7 +12,19 @@
   </div>
 </section>
 
-<section class="panel">
+<section class="admin-summary" aria-label="관리 요약">
+  <div><span>기자재 종류</span><strong>{{ inventory|length }}</strong><small>등록된 종류</small></div>
+  <div><span>전체 기자재</span><strong>{{ inventory|sum(attribute='total_qty') }}</strong><small>총 보유 수량</small></div>
+  <div><span>현재 미반납</span><strong>{{ outstanding|sum(attribute='quantity') }}</strong><small>대여 중 수량</small></div>
+</section>
+
+<nav class="admin-jump" aria-label="관리자 화면 바로가기">
+  <a href="#inventory-management">기자재 수량</a>
+  <a href="#outstanding-management">현재 미반납</a>
+  <a href="#transaction-history">최근 거래</a>
+</nav>
+
+<section id="inventory-management" class="panel anchor-section">
   <div class="section-title"><h2>기자재 수량</h2><p>실물 확인 후 전체 수량과 현재 사용 가능 수량을 입력하세요.</p></div>
   <form class="equipment-add" method="post" action="{{ url_for('web.admin_add_equipment') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -33,7 +45,7 @@
   </div>
 </section>
 
-<section class="panel">
+<section id="outstanding-management" class="panel anchor-section">
   <div class="section-title"><h2>현재 미반납</h2><p>취소되지 않은 거래를 학생·기자재별로 합산합니다.</p></div>
   <div class="table-scroll">
     <table>
@@ -47,7 +59,7 @@
   </div>
 </section>
 
-<section class="panel">
+<section id="transaction-history" class="panel anchor-section">
   <div class="section-title"><h2>최근 거래</h2><p>취소하면 반대 방향으로 재고가 복구되며 기록은 삭제되지 않습니다.</p></div>
   <form class="transaction-search" method="get" action="{{ url_for('web.admin_page') }}">
     <input name="q" value="{{ query }}" placeholder="학번 또는 기자재 이름 검색">

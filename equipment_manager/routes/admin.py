@@ -22,12 +22,21 @@ from .common import admin_required
 @bp.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
+        supplied_username = request.form.get("username", "").strip()
         supplied = request.form.get("password", "")
-        if secrets.compare_digest(supplied, current_app.config["ADMIN_PASSWORD"]):
+        username_valid = secrets.compare_digest(
+            supplied_username,
+            current_app.config["ADMIN_USERNAME"],
+        )
+        password_valid = secrets.compare_digest(
+            supplied,
+            current_app.config["ADMIN_PASSWORD"],
+        )
+        if username_valid and password_valid:
             session["admin_authenticated"] = True
             flash("관리자로 로그인했습니다.", "success")
             return redirect(url_for("web.admin_page"))
-        flash("관리자 비밀번호가 올바르지 않습니다.", "error")
+        flash("관리자 아이디 또는 비밀번호가 올바르지 않습니다.", "error")
     return render_template("login.html", mode="admin")
 
 

@@ -45,7 +45,9 @@ class Config:
     DATABASE = os.getenv("DATABASE", str(BASE_DIR / "instance" / "equipment.db"))
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
+    STATION_AUTH_REQUIRED = env_bool("STATION_AUTH_REQUIRED", False)
     STATION_PIN = os.getenv("STATION_PIN", "1234")
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
