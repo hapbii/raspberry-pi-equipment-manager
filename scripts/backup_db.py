@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import os
-import sqlite3
-from datetime import datetime
+import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 root = Path(__file__).resolve().parent.parent
-source = Path(os.getenv("DATABASE", str(root / "instance" / "equipment.db"))).expanduser()
+load_dotenv(root / ".env")
+sys.path.insert(0, str(root))
+
+from equipment_manager.backup import backup_database  # noqa: E402
+
+
+configured_source = Path(
+    os.getenv("DATABASE", str(root / "instance" / "equipment.db"))
+).expanduser()
+source = configured_source if configured_source.is_absolute() else root / configured_source
 backup_dir = root / "backups"
 
-if not source.exists():
-    raise SystemExit(f"DB 파일을 찾을 수 없습니다: {source}")
+try:
+    destination = backup_database(source, backup_dir)
+except (OSError, RuntimeError) as exc:
+    raise SystemExit(str(exc)) from exc
 
-backup_dir.mkdir(parents=True, exist_ok=True)
-destination = backup_dir / f"equipment-{datetime.now():%Y%m%d-%H%M%S}.db"
-
-with sqlite3.connect(source) as src, sqlite3.connect(destination) as dst:
-    src.backup(dst)
-
-print(destination)
+print(f"백업 완료: {destination}")
+print(f"파일 크기: {destination.stat().st_size / 1024:.1f} KiB")

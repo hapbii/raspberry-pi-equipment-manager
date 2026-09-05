@@ -63,6 +63,8 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/").status_code, 200)
         health = self.client.get("/healthz").get_json()
         self.assertEqual(health["ok"], True)
+        self.assertEqual(health["database"]["engine"], "sqlite")
+        self.assertEqual(health["database"]["journal_mode"], "wal")
         self.assertGreater(health["memory_rss_mb"], 0)
         self.assertIn("busy", health["inference"])
         css_response = self.client.get("/static/style.css")

@@ -19,13 +19,16 @@ def dashboard():
 @bp.get("/healthz")
 def healthz():
     try:
-        get_db().execute("SELECT 1").fetchone()
+        db = get_db()
+        db.execute("SELECT 1").fetchone()
+        journal_mode = str(db.execute("PRAGMA journal_mode").fetchone()[0]).lower()
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 503
     return jsonify(
         {
             "ok": True,
             "time": utc_now(),
+            "database": {"engine": "sqlite", "journal_mode": journal_mode},
             "memory_rss_mb": current_rss_mb(),
             "inference": get_detection_service().status(),
         }

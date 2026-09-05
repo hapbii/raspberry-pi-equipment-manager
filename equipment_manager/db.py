@@ -19,6 +19,8 @@ def get_db() -> sqlite3.Connection:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA synchronous = NORMAL")
+        connection.execute("PRAGMA wal_autocheckpoint = 1000")
         g.db = connection
     return g.db
 
@@ -31,6 +33,12 @@ def close_db(_error=None) -> None:
 
 def init_app_database() -> None:
     db = get_db()
+    journal_mode = db.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+    if str(journal_mode).lower() != "wal":
+        current_app.logger.warning(
+            "SQLite WAL mode was not enabled; current mode is %s",
+            journal_mode,
+        )
     schema_path = Path(__file__).with_name("schema.sql")
     db.executescript(schema_path.read_text(encoding="utf-8"))
 
