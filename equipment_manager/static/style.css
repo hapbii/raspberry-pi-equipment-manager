@@ -226,10 +226,10 @@ legend { margin-bottom: 7px; color: var(--navy); font-weight: 700; font-size: .8
 .equipment-add, .transaction-search { display: flex; gap: 10px; align-items: end; margin-bottom: 18px; }
 .equipment-add { padding: 14px; border: 1px dashed #aac0cf; border-radius: 12px; background: #f8fbfd; }
 .equipment-add label { flex: 1; margin: 0; }
-.equipment-add label:nth-of-type(2) { max-width: 150px; }
+.equipment-add label:nth-of-type(2), .equipment-add label:nth-of-type(3) { max-width: 150px; }
 .equipment-add input, .transaction-search input { margin: 0; }
 .transaction-search input { max-width: 360px; }
-.inventory-edit { display: grid; grid-template-columns: 1fr 130px 130px auto; gap: 12px; align-items: end; padding: 12px; border-radius: 12px; background: var(--soft); }
+.inventory-edit { display: grid; grid-template-columns: 1fr 115px 115px 145px auto; gap: 12px; align-items: end; padding: 12px; border-radius: 12px; background: var(--soft); }
 .inventory-edit strong { align-self: center; color: var(--navy); }
 .inventory-edit label { margin: 0; font-size: .75rem; }
 .inventory-edit input { margin-top: 3px; padding: 8px; }
@@ -257,7 +257,7 @@ tbody tr:hover { background: #f7fafc; }
   .inventory-grid, .info-strip, .scan-layout { grid-template-columns: 1fr; }
   .inventory-edit { grid-template-columns: 1fr 1fr; }
   .equipment-add, .transaction-search { align-items: stretch; flex-direction: column; }
-  .equipment-add label:nth-of-type(2) { max-width: none; }
+  .equipment-add label:nth-of-type(2), .equipment-add label:nth-of-type(3) { max-width: none; }
   .inventory-edit strong { grid-column: 1 / -1; }
   .section-title { align-items: flex-start; flex-direction: column; }
   .admin-summary { grid-template-columns: repeat(2, 1fr); }

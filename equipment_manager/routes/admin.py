@@ -78,10 +78,14 @@ def admin_page():
 @admin_required
 def admin_add_equipment():
     try:
-        add_equipment(request.form.get("name", ""), int(request.form.get("total_qty", "")))
+        add_equipment(
+            request.form.get("name", ""),
+            int(request.form.get("total_qty", "")),
+            int(request.form.get("loan_period_days", "")),
+        )
         flash("새 기자재 종류를 추가했습니다.", "success")
     except (ValueError, InventoryError) as exc:
-        flash(str(exc) or "수량을 숫자로 입력해 주세요.", "error")
+        flash(str(exc) or "수량과 대여 기간을 숫자로 입력해 주세요.", "error")
     return redirect(url_for("web.admin_page"))
 
 
@@ -91,10 +95,11 @@ def admin_update_equipment(equipment_id: int):
     try:
         total_qty = int(request.form.get("total_qty", ""))
         available_qty = int(request.form.get("available_qty", ""))
-        update_equipment(equipment_id, total_qty, available_qty)
-        flash("기자재 수량을 수정했습니다.", "success")
+        loan_period_days = int(request.form.get("loan_period_days", ""))
+        update_equipment(equipment_id, total_qty, available_qty, loan_period_days)
+        flash("기자재 수량과 대여 기간을 수정했습니다.", "success")
     except (ValueError, InventoryError) as exc:
-        flash(str(exc) or "수량을 숫자로 입력해 주세요.", "error")
+        flash(str(exc) or "수량과 대여 기간을 숫자로 입력해 주세요.", "error")
     return redirect(url_for("web.admin_page"))
 
 

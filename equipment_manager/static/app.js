@@ -45,6 +45,7 @@
           card.querySelector(".available-number").textContent = item.available_qty;
           card.querySelector(".total-number").textContent = ` / ${item.total_qty}개`;
           card.querySelector(".loaned-number").textContent = item.loaned_qty;
+          card.querySelector(".loan-period-number").textContent = item.loan_period_days;
           card.querySelector(".meter span").style.width = `${item.total_qty ? item.available_qty / item.total_qty * 100 : 0}%`;
           const badge = card.querySelector(".availability-badge");
           badge.textContent = item.available_qty > 0 ? "사용 가능" : "대여 불가";
@@ -91,23 +92,25 @@
     const message = document.querySelector("#scan-message");
     const studentInput = document.querySelector("#student-id");
     const quantityInput = document.querySelector("#quantity");
-    const dueDateField = document.querySelector("#due-date-field");
-    const dueDateInput = document.querySelector("#due-date");
+    const resultLoanPeriod = document.querySelector("#result-loan-period");
     const actionInputs = document.querySelectorAll('input[name="action"]');
     let scanToken = null;
+    let scanDueDate = null;
+    let scanLoanPeriodDays = null;
 
     function selectedAction() {
       return document.querySelector('input[name="action"]:checked')?.value;
     }
 
-    function syncDueDateField() {
-      const isLoan = selectedAction() === "loan";
-      dueDateField.classList.toggle("hidden", !isLoan);
-      dueDateInput.required = isLoan;
+    function syncLoanPeriodResult() {
+      const showPeriod = selectedAction() === "loan" && scanDueDate !== null;
+      resultLoanPeriod.classList.toggle("hidden", !showPeriod);
+      if (showPeriod) {
+        resultLoanPeriod.textContent = `관리자 설정: ${scanLoanPeriodDays}일 대여 · 반납 예정 ${scanDueDate}`;
+      }
     }
 
-    actionInputs.forEach((input) => input.addEventListener("change", syncDueDateField));
-    syncDueDateField();
+    actionInputs.forEach((input) => input.addEventListener("change", syncLoanPeriodResult));
 
     function showMessage(text, success = false) {
       message.textContent = text;
@@ -117,7 +120,10 @@
 
     function resetResult() {
       scanToken = null;
+      scanDueDate = null;
+      scanLoanPeriodDays = null;
       resultPanel.classList.add("hidden");
+      resultLoanPeriod.classList.add("hidden");
       placeholder.classList.remove("hidden");
       message.classList.add("hidden");
     }
@@ -128,9 +134,6 @@
       if (!studentInput.value.trim()) return showMessage("학번을 먼저 입력해 주세요.");
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
         return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
-      }
-      if (selectedAction() === "loan" && !dueDateInput.value) {
-        return showMessage("반납 예정일을 선택해 주세요.");
       }
       detectButton.disabled = true;
       detectButton.setAttribute("aria-busy", "true");
@@ -143,12 +146,15 @@
           action: selectedAction(),
         });
         scanToken = data.scan.token;
+        scanDueDate = data.scan.due_date;
+        scanLoanPeriodDays = data.scan.loan_period_days;
         document.querySelector("#result-name").textContent = data.scan.equipment_name;
         document.querySelector("#result-confidence").textContent = `${(data.scan.confidence * 100).toFixed(1)}%`;
         document.querySelector("#result-votes").textContent = `${data.votes}/${data.frame_count} 프레임 일치`;
         document.querySelector("#result-duration").textContent = `${(data.duration_ms / 1000).toFixed(2)}초`;
         placeholder.classList.add("hidden");
         resultPanel.classList.remove("hidden");
+        syncLoanPeriodResult();
       } catch (error) {
         showMessage(error.message);
       } finally {
@@ -173,7 +179,6 @@
           student_id: studentId,
           action,
           quantity,
-          due_date: action === "loan" ? dueDateInput.value : null,
         });
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";

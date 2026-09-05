@@ -4,7 +4,7 @@ import re
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import current_app
 
@@ -32,7 +32,7 @@ class TransactionResult:
 def list_inventory() -> list[dict]:
     rows = get_db().execute(
         """
-        SELECT id, name, total_qty, available_qty,
+        SELECT id, name, total_qty, available_qty, loan_period_days,
                total_qty - available_qty AS loaned_qty, updated_at
         FROM equipment
         WHERE active = 1
@@ -56,21 +56,38 @@ def find_equipment_by_name(name: str) -> dict | None:
     return dict(row) if row else None
 
 
-def add_equipment(name: str, total_qty: int) -> None:
+def _validate_loan_period_days(loan_period_days: int) -> int:
+    maximum = current_app.config["MAX_LOAN_DAYS"]
+    if loan_period_days < 0 or loan_period_days > maximum:
+        raise InventoryError(f"대여 기간은 0~{maximum}일 사이여야 합니다.")
+    return loan_period_days
+
+
+def _due_date_for_period(loan_period_days: int) -> str:
+    return (
+        datetime.now().astimezone().date()
+        + timedelta(days=loan_period_days)
+    ).isoformat()
+
+
+def add_equipment(name: str, total_qty: int, loan_period_days: int) -> None:
     clean_name = name.strip()
     if len(clean_name) < 2 or len(clean_name) > 40:
         raise InventoryError("기자재 이름은 2~40자로 입력해 주세요.")
     if total_qty < 0 or total_qty > 9999:
         raise InventoryError("전체 수량은 0~9999 사이여야 합니다.")
+    loan_period_days = _validate_loan_period_days(loan_period_days)
     db = get_db()
     now = utc_now()
     try:
         db.execute(
             """
-            INSERT INTO equipment(name, total_qty, available_qty, active, created_at, updated_at)
-            VALUES (?, ?, ?, 1, ?, ?)
+            INSERT INTO equipment(
+                name, total_qty, available_qty, loan_period_days,
+                active, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 1, ?, ?)
             """,
-            (clean_name, total_qty, total_qty, now, now),
+            (clean_name, total_qty, total_qty, loan_period_days, now, now),
         )
         db.commit()
     except sqlite3.IntegrityError as exc:
@@ -107,6 +124,8 @@ def create_scan_session(equipment_id: int, confidence: float) -> dict:
         "token": token,
         "equipment_id": equipment_id,
         "equipment_name": equipment["name"],
+        "loan_period_days": equipment["loan_period_days"],
+        "due_date": _due_date_for_period(int(equipment["loan_period_days"])),
         "confidence": confidence,
         "expires_at": expires.isoformat(timespec="seconds"),
     }
@@ -117,33 +136,6 @@ def _validate_student_id(student_id: str) -> str:
     if not STUDENT_ID_PATTERN.fullmatch(value):
         raise InventoryError("학번은 2~30자의 한글, 영문, 숫자, 밑줄 또는 하이픈만 사용할 수 있습니다.")
     return value
-
-
-def loan_date_limits() -> tuple[str, str, str]:
-    today = datetime.now().astimezone().date()
-    default_days = max(0, current_app.config["DEFAULT_LOAN_DAYS"])
-    maximum_days = max(default_days, current_app.config["MAX_LOAN_DAYS"])
-    return (
-        today.isoformat(),
-        (today + timedelta(days=default_days)).isoformat(),
-        (today + timedelta(days=maximum_days)).isoformat(),
-    )
-
-
-def _validated_due_date(value: str | None) -> str:
-    minimum, default, maximum = loan_date_limits()
-    raw = (value or default).strip()
-    try:
-        parsed = date.fromisoformat(raw)
-    except ValueError as exc:
-        raise InventoryError("반납 예정일을 올바르게 선택해 주세요.") from exc
-    if parsed < date.fromisoformat(minimum):
-        raise InventoryError("반납 예정일은 오늘보다 이전일 수 없습니다.")
-    if parsed > date.fromisoformat(maximum):
-        raise InventoryError(
-            f"대여 기간은 최대 {current_app.config['MAX_LOAN_DAYS']}일까지 선택할 수 있습니다."
-        )
-    return parsed.isoformat()
 
 
 def _student_balance(db: sqlite3.Connection, student_id: str, equipment_id: int) -> int:
@@ -195,22 +187,19 @@ def commit_transaction(
     student_id: str,
     action: str,
     quantity: int,
-    due_date: str | None = None,
 ) -> TransactionResult:
     student_id = _validate_student_id(student_id)
     if action not in {"loan", "return"}:
         raise InventoryError("대여 또는 반납을 선택해 주세요.")
     if not isinstance(quantity, int) or quantity < 1 or quantity > 20:
         raise InventoryError("수량은 1~20 사이여야 합니다.")
-    resolved_due_date = _validated_due_date(due_date) if action == "loan" else None
-
     db = get_db()
     now = utc_now()
     try:
         db.execute("BEGIN IMMEDIATE")
         scan = db.execute(
             """
-            SELECT s.*, e.name, e.total_qty, e.available_qty
+            SELECT s.*, e.name, e.total_qty, e.available_qty, e.loan_period_days
             FROM scan_sessions s
             JOIN equipment e ON e.id = s.equipment_id
             WHERE s.token = ?
@@ -224,8 +213,10 @@ def commit_transaction(
         if datetime.fromisoformat(scan["expires_at"]) < datetime.now(timezone.utc):
             raise InventoryError("인식 결과의 유효 시간이 지났습니다. 다시 촬영해 주세요.")
 
+        resolved_due_date = None
         if action == "loan":
             _raise_if_student_overdue(db, student_id)
+            resolved_due_date = _due_date_for_period(int(scan["loan_period_days"]))
 
         duplicate_window = current_app.config["DUPLICATE_WINDOW_SECONDS"]
         if duplicate_window > 0:
@@ -410,17 +401,23 @@ def list_outstanding() -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def update_equipment(equipment_id: int, total_qty: int, available_qty: int) -> None:
+def update_equipment(
+    equipment_id: int,
+    total_qty: int,
+    available_qty: int,
+    loan_period_days: int,
+) -> None:
     if total_qty < 0 or available_qty < 0 or available_qty > total_qty:
         raise InventoryError("수량은 0 이상이며, 사용 가능 수량은 전체 수량을 넘을 수 없습니다.")
+    loan_period_days = _validate_loan_period_days(loan_period_days)
     db = get_db()
     result = db.execute(
         """
         UPDATE equipment
-        SET total_qty = ?, available_qty = ?, updated_at = ?
+        SET total_qty = ?, available_qty = ?, loan_period_days = ?, updated_at = ?
         WHERE id = ? AND active = 1
         """,
-        (total_qty, available_qty, utc_now(), equipment_id),
+        (total_qty, available_qty, loan_period_days, utc_now(), equipment_id),
     )
     if result.rowcount != 1:
         db.rollback()

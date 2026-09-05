@@ -98,6 +98,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         js_response.close()
         payload = self.client.get("/api/status").get_json()
         self.assertEqual(len(payload["inventory"]), 2)
+        self.assertEqual(payload["inventory"][0]["loan_period_days"], 7)
         self.assertNotIn("student_id", str(payload))
 
     def test_scan_requires_station_login(self):
@@ -208,12 +209,21 @@ class EquipmentManagerTestCase(unittest.TestCase):
     def test_overdue_student_cannot_borrow_until_every_overdue_item_is_returned(self):
         self.login_station()
         first, second = self.client.get("/api/status").get_json()["inventory"]
+        self.login_admin()
+        configured = self.client.post(
+            f"/admin/equipment/{first['id']}",
+            data={
+                "total_qty": first["total_qty"],
+                "available_qty": first["available_qty"],
+                "loan_period_days": 1,
+            },
+        )
+        self.assertEqual(configured.status_code, 302)
         tomorrow = (datetime.now().astimezone().date() + timedelta(days=1)).isoformat()
         loan = self.transact(
             self.scan(first["id"]),
             student_id="30999",
             quantity=2,
-            due_date=tomorrow,
         )
         self.assertEqual(loan.status_code, 200, loan.get_json())
         self.assertEqual(loan.get_json()["transaction"]["due_date"], tomorrow)
@@ -249,7 +259,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertIn(yesterday, admin_page.get_data(as_text=True))
 
         blocked_token = self.scan(second["id"])
-        blocked = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        blocked = self.transact(blocked_token, student_id="30999")
         self.assertEqual(blocked.status_code, 422)
         self.assertIn("연체", blocked.get_json()["error"])
 
@@ -257,33 +267,91 @@ class EquipmentManagerTestCase(unittest.TestCase):
             self.scan(first["id"]), student_id="30999", action="return", quantity=1
         )
         self.assertEqual(partial_return.status_code, 200, partial_return.get_json())
-        still_blocked = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        still_blocked = self.transact(blocked_token, student_id="30999")
         self.assertEqual(still_blocked.status_code, 422)
 
         final_return = self.transact(
             self.scan(first["id"]), student_id="30999", action="return", quantity=1
         )
         self.assertEqual(final_return.status_code, 200, final_return.get_json())
-        allowed = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        allowed = self.transact(blocked_token, student_id="30999")
         self.assertEqual(allowed.status_code, 200, allowed.get_json())
 
-    def test_due_date_must_be_within_configured_range(self):
+    def test_admin_controls_each_equipment_loan_period(self):
+        self.login_admin()
+        admin_html = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn('name="loan_period_days"', admin_html)
         self.login_station()
+        scan_html = self.client.get("/scan").get_data(as_text=True)
+        self.assertNotIn('id="due-date"', scan_html)
+        self.assertIn("관리자가 기자재별로 지정", scan_html)
         item = self.first_equipment()
-        today = datetime.now().astimezone().date()
-        past = self.transact(
-            self.scan(item["id"]),
-            due_date=(today - timedelta(days=1)).isoformat(),
+        updated = self.client.post(
+            f"/admin/equipment/{item['id']}",
+            data={
+                "total_qty": item["total_qty"],
+                "available_qty": item["available_qty"],
+                "loan_period_days": 14,
+            },
         )
-        self.assertEqual(past.status_code, 422)
-        self.assertIn("오늘보다 이전", past.get_json()["error"])
+        self.assertEqual(updated.status_code, 302)
+        current = self.first_equipment()
+        self.assertEqual(current["loan_period_days"], 14)
 
-        too_far = self.transact(
-            self.scan(item["id"]),
-            due_date=(today + timedelta(days=91)).isoformat(),
+        today = datetime.now().astimezone().date()
+        scan_response = self.client.post(
+            "/api/scans", json={"mock_equipment_id": item["id"]}
         )
-        self.assertEqual(too_far.status_code, 422)
-        self.assertIn("최대", too_far.get_json()["error"])
+        scan = scan_response.get_json()["scan"]
+        expected_due_date = (today + timedelta(days=14)).isoformat()
+        self.assertEqual(scan["loan_period_days"], 14)
+        self.assertEqual(scan["due_date"], expected_due_date)
+
+        loan = self.transact(
+            scan["token"],
+            due_date=(today + timedelta(days=1)).isoformat(),
+        )
+        self.assertEqual(loan.status_code, 200, loan.get_json())
+        self.assertEqual(loan.get_json()["transaction"]["due_date"], expected_due_date)
+
+        changed_again = self.client.post(
+            f"/admin/equipment/{item['id']}",
+            data={
+                "total_qty": item["total_qty"],
+                "available_qty": item["available_qty"] - 1,
+                "loan_period_days": 3,
+            },
+        )
+        self.assertEqual(changed_again.status_code, 302)
+        with self.app.app_context():
+            from equipment_manager.db import get_db
+
+            stored_due_date = get_db().execute(
+                "SELECT due_date FROM active_loans WHERE student_id = ?",
+                ("30304",),
+            ).fetchone()[0]
+        self.assertEqual(stored_due_date, expected_due_date)
+
+        next_loan = self.transact(
+            self.scan(item["id"]),
+            student_id="30305",
+        )
+        self.assertEqual(
+            next_loan.get_json()["transaction"]["due_date"],
+            (today + timedelta(days=3)).isoformat(),
+        )
+
+        rejected = self.client.post(
+            f"/admin/equipment/{item['id']}",
+            data={
+                "total_qty": item["total_qty"],
+                "available_qty": item["available_qty"] - 2,
+                "loan_period_days": 91,
+            },
+            follow_redirects=True,
+        )
+        self.assertIn("0~90일", rejected.get_data(as_text=True))
+        self.assertEqual(self.first_equipment()["loan_period_days"], 3)
 
     def test_admin_can_reverse_transaction(self):
         self.login_station()
@@ -343,11 +411,16 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.login_admin()
         response = self.client.post(
             "/admin/equipment",
-            data={"name": "오실로스코프", "total_qty": 2},
+            data={"name": "오실로스코프", "total_qty": 2, "loan_period_days": 21},
         )
         self.assertEqual(response.status_code, 302)
         names = [row["name"] for row in self.client.get("/api/status").get_json()["inventory"]]
         self.assertIn("오실로스코프", names)
+        added = next(
+            row for row in self.client.get("/api/status").get_json()["inventory"]
+            if row["name"] == "오실로스코프"
+        )
+        self.assertEqual(added["loan_period_days"], 21)
         export = self.client.get("/admin/export.csv")
         self.assertEqual(export.status_code, 200)
         self.assertIn("text/csv", export.content_type)
@@ -357,7 +430,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         item = self.first_equipment()
         self.client.post(
             f"/admin/equipment/{item['id']}",
-            data={"total_qty": 1, "available_qty": 2},
+            data={"total_qty": 1, "available_qty": 2, "loan_period_days": 7},
         )
         unchanged = next(
             row for row in self.client.get("/api/status").get_json()["inventory"]

@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS equipment (
     name TEXT NOT NULL UNIQUE,
     total_qty INTEGER NOT NULL CHECK (total_qty >= 0),
     available_qty INTEGER NOT NULL CHECK (available_qty >= 0 AND available_qty <= total_qty),
+    loan_period_days INTEGER NOT NULL DEFAULT 7 CHECK (loan_period_days >= 0),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

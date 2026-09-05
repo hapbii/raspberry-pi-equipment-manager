@@ -60,6 +60,7 @@ class DatabaseMigrationTestCase(unittest.TestCase):
                     "SECRET_KEY": "migration-test",
                     "HEARTBEAT_ENABLED": False,
                     "DETECTOR_MODE": "mock",
+                    "DEFAULT_LOAN_DAYS": 14,
                 }
             )
             try:
@@ -68,6 +69,9 @@ class DatabaseMigrationTestCase(unittest.TestCase):
                     columns = {
                         row[1] for row in db.execute("PRAGMA table_info(transactions)")
                     }
+                    equipment_columns = {
+                        row[1] for row in db.execute("PRAGMA table_info(equipment)")
+                    }
                     active = db.execute(
                         "SELECT remaining_quantity, due_date FROM active_loans"
                     ).fetchone()
@@ -75,6 +79,13 @@ class DatabaseMigrationTestCase(unittest.TestCase):
                         "SELECT quantity FROM return_allocations"
                     ).fetchone()
                     self.assertIn("due_date", columns)
+                    self.assertIn("loan_period_days", equipment_columns)
+                    self.assertEqual(
+                        db.execute(
+                            "SELECT loan_period_days FROM equipment WHERE id = 1"
+                        ).fetchone()[0],
+                        14,
+                    )
                     self.assertEqual(active["remaining_quantity"], 1)
                     self.assertIsNone(active["due_date"])
                     self.assertEqual(allocation["quantity"], 1)
@@ -100,6 +111,12 @@ class DatabaseMigrationTestCase(unittest.TestCase):
                     self.assertEqual(
                         db.execute("SELECT COUNT(*) FROM return_allocations").fetchone()[0],
                         1,
+                    )
+                    self.assertEqual(
+                        db.execute(
+                            "SELECT loan_period_days FROM equipment WHERE id = 1"
+                        ).fetchone()[0],
+                        14,
                     )
             finally:
                 second_app.extensions["shutdown_services"]()

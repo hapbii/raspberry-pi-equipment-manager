@@ -21,17 +21,18 @@
 </section>
 
 <nav class="admin-jump" aria-label="관리자 화면 바로가기">
-  <a href="#inventory-management">기자재 수량</a>
+  <a href="#inventory-management">기자재 설정</a>
   <a href="#outstanding-management">현재 미반납</a>
   <a href="#transaction-history">최근 거래</a>
 </nav>
 
 <section id="inventory-management" class="panel anchor-section">
-  <div class="section-title"><h2>기자재 수량</h2><p>실물 확인 후 전체 수량과 현재 사용 가능 수량을 입력하세요.</p></div>
+  <div class="section-title"><h2>기자재 설정</h2><p>수량과 기자재별 대여 기간을 설정합니다. 기간 변경은 다음 대여부터 적용됩니다.</p></div>
   <form class="equipment-add" method="post" action="{{ url_for('web.admin_add_equipment') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>새 기자재 이름<input name="name" maxlength="40" placeholder="예: 오실로스코프" required></label>
     <label>전체 수량<input type="number" name="total_qty" min="0" max="9999" value="1" required></label>
+    <label>대여 기간(일)<input type="number" name="loan_period_days" min="0" max="{{ config.MAX_LOAN_DAYS }}" value="{{ config.DEFAULT_LOAN_DAYS }}" required></label>
     <button class="button primary" type="submit">종류 추가</button>
   </form>
   <div class="admin-inventory">
@@ -41,6 +42,7 @@
       <strong>{{ item.name }}</strong>
       <label>전체<input type="number" name="total_qty" min="0" value="{{ item.total_qty }}" required></label>
       <label>사용 가능<input type="number" name="available_qty" min="0" value="{{ item.available_qty }}" required></label>
+      <label>대여 기간(일)<input type="number" name="loan_period_days" min="0" max="{{ config.MAX_LOAN_DAYS }}" value="{{ item.loan_period_days }}" required></label>
       <button class="button small" type="submit">수정</button>
     </form>
     {% endfor %}

@@ -13,7 +13,6 @@ from ..inventory import (
     create_scan_session,
     find_equipment_by_name,
     get_equipment,
-    loan_date_limits,
     list_inventory,
 )
 from ..vision import DetectionError, get_detection_service
@@ -46,14 +45,7 @@ def station_logout():
 @bp.get("/scan")
 @station_required
 def scan_page():
-    minimum_due_date, default_due_date, maximum_due_date = loan_date_limits()
-    return render_template(
-        "scan.html",
-        inventory=list_inventory(),
-        minimum_due_date=minimum_due_date,
-        default_due_date=default_due_date,
-        maximum_due_date=maximum_due_date,
-    )
+    return render_template("scan.html", inventory=list_inventory())
 
 
 @bp.post("/api/scans")
@@ -114,7 +106,6 @@ def api_create_scan():
 @station_required
 def api_create_transaction():
     data = request.get_json(silent=True) or {}
-    raw_due_date = data.get("due_date")
     try:
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
@@ -125,7 +116,6 @@ def api_create_transaction():
             student_id=str(data.get("student_id", "")),
             action=str(data.get("action", "")),
             quantity=quantity,
-            due_date=str(raw_due_date) if raw_due_date else None,
         )
         get_indicator().success()
         return jsonify({"ok": True, "transaction": result.__dict__})

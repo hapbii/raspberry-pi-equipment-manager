@@ -41,6 +41,7 @@ def init_app_database() -> None:
         )
     schema_path = Path(__file__).with_name("schema.sql")
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    _migrate_equipment_loan_periods(db)
     _migrate_transaction_due_dates(db)
     _backfill_active_loans(db)
 
@@ -50,11 +51,19 @@ def init_app_database() -> None:
         quantity = current_app.config["DEFAULT_QUANTITY"]
         db.executemany(
             """
-            INSERT INTO equipment(name, total_qty, available_qty, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO equipment(
+                name, total_qty, available_qty, loan_period_days, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
-                (name, quantity, quantity, now, now)
+                (
+                    name,
+                    quantity,
+                    quantity,
+                    current_app.config["DEFAULT_LOAN_DAYS"],
+                    now,
+                    now,
+                )
                 for name in current_app.config["DEFAULT_EQUIPMENT"]
             ],
         )
@@ -78,6 +87,19 @@ def init_app_database() -> None:
         ),
     )
     db.commit()
+
+
+def _migrate_equipment_loan_periods(db: sqlite3.Connection) -> None:
+    columns = {str(row[1]) for row in db.execute("PRAGMA table_info(equipment)")}
+    if "loan_period_days" not in columns:
+        db.execute(
+            "ALTER TABLE equipment "
+            "ADD COLUMN loan_period_days INTEGER NOT NULL DEFAULT 7"
+        )
+        db.execute(
+            "UPDATE equipment SET loan_period_days = ?",
+            (current_app.config["DEFAULT_LOAN_DAYS"],),
+        )
 
 
 def _migrate_transaction_due_dates(db: sqlite3.Connection) -> None:
