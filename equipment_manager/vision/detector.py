@@ -231,16 +231,19 @@ class YoloDetector:
         )
 
     def close(self) -> None:
-        self.frame_source.close()
         model, self._model = self._model, None
-        if model is not None:
-            try:
-                model.predictor = None
-            except Exception:
-                logger.debug("YOLO predictor release failed", exc_info=True)
-        model = None
-        gc.collect()
-        logger.info("YOLO detector released")
+        try:
+            self.frame_source.close()
+        finally:
+            if model is not None:
+                self._clear_predictor_frame_references(model)
+                try:
+                    model.predictor = None
+                except Exception:
+                    logger.debug("YOLO predictor release failed", exc_info=True)
+            model = None
+            gc.collect()
+            logger.info("YOLO detector released")
 
 
 def build_detector(config: dict) -> Detector:

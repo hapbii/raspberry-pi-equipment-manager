@@ -8,6 +8,8 @@ from flask import current_app
 
 
 logger = logging.getLogger(__name__)
+INDICATOR_LOCK_KEY = "status_indicator_lock"
+INDICATOR_KEY = "status_indicator"
 
 
 class NullIndicator:
@@ -124,21 +126,32 @@ class GpioIndicator:
                 logger.debug("GPIO device close failed", exc_info=True)
 
 
+def init_hardware(app) -> None:
+    """요청이 동시에 시작되어도 표시기는 한 번만 생성되도록 준비합니다."""
+    app.extensions[INDICATOR_LOCK_KEY] = threading.Lock()
+
+
 def get_indicator():
-    indicator = current_app.extensions.get("status_indicator")
+    indicator = current_app.extensions.get(INDICATOR_KEY)
     if indicator is not None:
         return indicator
-    if current_app.config["GPIO_ENABLED"]:
-        try:
-            indicator = GpioIndicator(
-                current_app.config["GPIO_GREEN_PIN"],
-                current_app.config["GPIO_RED_PIN"],
-                current_app.config["GPIO_BUZZER_PIN"],
-            )
-        except Exception:
-            logger.exception("GPIO indicator initialization failed")
+
+    lock = current_app.extensions[INDICATOR_LOCK_KEY]
+    with lock:
+        indicator = current_app.extensions.get(INDICATOR_KEY)
+        if indicator is not None:
+            return indicator
+        if current_app.config["GPIO_ENABLED"]:
+            try:
+                indicator = GpioIndicator(
+                    current_app.config["GPIO_GREEN_PIN"],
+                    current_app.config["GPIO_RED_PIN"],
+                    current_app.config["GPIO_BUZZER_PIN"],
+                )
+            except Exception:
+                logger.exception("GPIO indicator initialization failed")
+                indicator = NullIndicator()
+        else:
             indicator = NullIndicator()
-    else:
-        indicator = NullIndicator()
-    current_app.extensions["status_indicator"] = indicator
-    return indicator
+        current_app.extensions[INDICATOR_KEY] = indicator
+        return indicator

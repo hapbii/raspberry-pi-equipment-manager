@@ -101,6 +101,16 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(payload["inventory"][0]["loan_period_days"], 7)
         self.assertNotIn("student_id", str(payload))
 
+    def test_shutdown_releases_long_lived_service_references(self):
+        detection_service = self.app.extensions["detection_service"]
+
+        self.app.extensions["shutdown_services"]()
+
+        self.assertNotIn("detection_service", self.app.extensions)
+        self.assertNotIn("heartbeat_service", self.app.extensions)
+        self.assertTrue(detection_service.status()["closed"])
+        self.assertIsNone(detection_service._detector)
+
     def test_scan_requires_station_login(self):
         response = self.client.post("/api/scans", json={"mock_equipment_id": 1})
         self.assertEqual(response.status_code, 401)

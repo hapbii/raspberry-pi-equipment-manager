@@ -329,8 +329,9 @@ def _allocate_return(
         FROM active_loans
         WHERE student_id = ? AND equipment_id = ? AND remaining_quantity > 0
         ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at
+        LIMIT ?
         """,
-        (student_id, equipment_id),
+        (student_id, equipment_id, quantity),
     ).fetchall()
     for loan in loans:
         allocated = min(remaining, int(loan["remaining_quantity"]))

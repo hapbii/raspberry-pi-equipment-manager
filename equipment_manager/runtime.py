@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class HeartbeatService:
     def __init__(self, app):
-        self.app = app
+        self._app = app
         self.interval = max(5, int(app.config["HEARTBEAT_INTERVAL_SECONDS"]))
         self.memory_warning_mb = int(app.config["MEMORY_WARNING_MB"])
         self._stop_event = threading.Event()
@@ -29,11 +29,16 @@ class HeartbeatService:
         self._stop_event.set()
         if self._thread.is_alive() and threading.current_thread() is not self._thread:
             self._thread.join(timeout=min(5, self.interval + 1))
+        if not self._thread.is_alive():
+            self._app = None
 
     def _run(self) -> None:
         while not self._stop_event.wait(self.interval):
             try:
-                with self.app.app_context():
+                app = self._app
+                if app is None:
+                    return
+                with app.app_context():
                     set_device_status()
                     cleanup_expired_scan_sessions()
                 rss = current_rss_mb()
@@ -45,3 +50,5 @@ class HeartbeatService:
                     )
             except Exception:
                 logger.exception("Heartbeat update failed")
+            finally:
+                app = None

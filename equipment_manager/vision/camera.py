@@ -140,7 +140,10 @@ class OpenCvFrameSource:
         camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not camera.isOpened():
-            camera.release()
+            try:
+                camera.release()
+            except Exception:
+                logger.debug("Unopened OpenCV camera release failed", exc_info=True)
             raise DetectionError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
         self._camera = camera
         for _ in range(self.warmup_frames):
@@ -164,7 +167,10 @@ class OpenCvFrameSource:
         with self._lock:
             camera, self._camera = self._camera, None
             if camera is not None:
-                camera.release()
+                try:
+                    camera.release()
+                except Exception:
+                    logger.debug("OpenCV camera release failed", exc_info=True)
                 logger.info("OpenCV camera closed")
 
 

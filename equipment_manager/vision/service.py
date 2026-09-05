@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class DetectionService:
     def __init__(self, detector, gc_interval_scans: int = 20):
-        self.detector = detector
+        self._detector = detector
         self.gc_interval_scans = max(1, gc_interval_scans)
         self._lock = threading.Lock()
         self._metrics_lock = threading.Lock()
@@ -44,7 +44,10 @@ class DetectionService:
                 self._attempt_count += 1
             if self._closed:
                 raise DetectionError("객체 인식 서비스가 종료되었습니다.")
-            detection = self.detector.detect(category_hint)
+            detector = self._detector
+            if detector is None:
+                raise DetectionError("객체 인식 서비스가 종료되었습니다.")
+            detection = detector.detect(category_hint)
             succeeded = True
             duration_ms = round((perf_counter() - started) * 1000)
             return replace(
@@ -74,12 +77,13 @@ class DetectionService:
             self._lock.release()
 
     def preflight(self) -> PreflightResult:
-        if not isinstance(self.detector, YoloDetector):
-            raise DetectionError("실제 YOLO 모드에서만 사전 점검을 실행할 수 있습니다.")
         with self._lock:
             if self._closed:
                 raise DetectionError("객체 인식 서비스가 종료되었습니다.")
-            return self.detector.preflight()
+            detector = self._detector
+            if not isinstance(detector, YoloDetector):
+                raise DetectionError("실제 YOLO 모드에서만 사전 점검을 실행할 수 있습니다.")
+            return detector.preflight()
 
     def status(self) -> dict:
         with self._metrics_lock:
@@ -96,11 +100,18 @@ class DetectionService:
             }
 
     def close(self) -> None:
+        detector = None
         with self._lock:
             if self._closed:
                 return
             self._closed = True
-            self.detector.close()
+            detector, self._detector = self._detector, None
+        try:
+            if detector is not None:
+                detector.close()
+        finally:
+            detector = None
+            gc.collect()
 
 
 def build_detection_service(config: dict) -> DetectionService:

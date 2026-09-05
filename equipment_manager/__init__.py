@@ -9,6 +9,7 @@ from flask import Flask
 
 from .config import Config
 from .db import close_db, init_app_database
+from .hardware import INDICATOR_KEY, init_hardware
 from .runtime import HeartbeatService
 from .vision import build_detection_service
 
@@ -29,6 +30,7 @@ def create_app(test_config: dict | None = None) -> Flask:
     )
 
     app.teardown_appcontext(close_db)
+    init_hardware(app)
 
     from .routes import bp
 
@@ -49,12 +51,12 @@ def create_app(test_config: dict | None = None) -> Flask:
     shutdown_complete = False
 
     def shutdown_services() -> None:
-        nonlocal shutdown_complete
+        nonlocal shutdown_complete, heartbeat, detection_service
         with shutdown_lock:
             if shutdown_complete:
                 return
             shutdown_complete = True
-            indicator = app.extensions.get("status_indicator")
+            indicator = app.extensions.pop(INDICATOR_KEY, None)
             services = [
                 ("heartbeat", heartbeat.stop if heartbeat is not None else None),
                 ("detection", detection_service.close),
@@ -67,6 +69,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                     close_service()
                 except Exception:
                     app.logger.exception("Failed to close %s service", name)
+            app.extensions.pop("heartbeat_service", None)
+            app.extensions.pop("detection_service", None)
+            heartbeat = None
+            detection_service = None
 
     if not app.config.get("TESTING", False):
         atexit.register(shutdown_services)

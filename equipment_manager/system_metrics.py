@@ -9,9 +9,10 @@ def current_rss_mb() -> float | None:
     status_path = Path("/proc/self/status")
     if status_path.exists():
         try:
-            for line in status_path.read_text(encoding="ascii").splitlines():
-                if line.startswith("VmRSS:"):
-                    return round(int(line.split()[1]) / 1024, 1)
+            with status_path.open(encoding="ascii") as status_file:
+                for line in status_file:
+                    if line.startswith("VmRSS:"):
+                        return round(int(line.split()[1]) / 1024, 1)
         except (OSError, ValueError, IndexError):
             return None
     if os.name == "nt":

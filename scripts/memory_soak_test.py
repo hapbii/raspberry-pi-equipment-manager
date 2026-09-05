@@ -5,6 +5,7 @@ import gc
 import statistics
 import sys
 import time
+from collections import deque
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -50,7 +51,8 @@ def main() -> int:
     gc.collect()
     baseline = current_rss_mb()
     peak = baseline
-    rss_samples: list[float] = []
+    first_rss_samples: list[float] = []
+    recent_rss_samples: deque[float] = deque(maxlen=10)
     successes = 0
     failures = 0
     interrupted = False
@@ -70,7 +72,9 @@ def main() -> int:
             if rss is not None and (peak is None or rss > peak):
                 peak = rss
             if rss is not None:
-                rss_samples.append(rss)
+                if len(first_rss_samples) < 10:
+                    first_rss_samples.append(rss)
+                recent_rss_samples.append(rss)
             print(f"{index:03d}/{scan_count} RSS={rss} MB | {summary}")
             time.sleep(max(0, args.interval))
     except KeyboardInterrupt:
@@ -84,10 +88,9 @@ def main() -> int:
 
     growth = None if baseline is None or live_final is None else live_final - baseline
     trend = None
-    if rss_samples:
-        window = min(10, max(1, len(rss_samples) // 4))
-        trend = statistics.median(rss_samples[-window:]) - statistics.median(
-            rss_samples[:window]
+    if first_rss_samples and recent_rss_samples:
+        trend = statistics.median(recent_rss_samples) - statistics.median(
+            first_rss_samples
         )
     print(f"\n성공 {successes}회 / 실패 {failures}회")
     print(f"최고 RSS: {peak} MB")

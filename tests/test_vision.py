@@ -170,6 +170,12 @@ class FakeFrameSource:
         self.closed = True
 
 
+class FailingCloseFrameSource(FakeFrameSource):
+    def close(self):
+        self.closed = True
+        raise RuntimeError("camera close failed")
+
+
 class FakeFrameIterator:
     def __init__(self, count):
         self.remaining = count
@@ -209,6 +215,7 @@ class DetectionServiceTestCase(unittest.TestCase):
         service.close()
         service.close()
         self.assertTrue(detector.closed)
+        self.assertIsNone(service._detector)
 
     def test_failures_are_counted_cleaned_and_error_is_bounded(self):
         detector = FailingDetector()
@@ -280,6 +287,31 @@ class YoloDetectorTestCase(unittest.TestCase):
 
         detector.close()
         self.assertTrue(source.closed)
+
+    def test_model_references_are_released_when_camera_close_fails(self):
+        source = FailingCloseFrameSource()
+        model = FakeModel()
+        detector = YoloDetector(
+            {
+                "YOLO_MODEL_PATH": "models/test.pt",
+                "YOLO_IMAGE_SIZE": 320,
+                "YOLO_CONFIDENCE": 0.6,
+                "YOLO_MIN_VOTES": 3,
+                "YOLO_FRAME_COUNT": 5,
+                "YOLO_MAX_DETECTIONS": 5,
+                "INFERENCE_THREADS": 2,
+                "YOLO_CLASS_ALIASES": {},
+            },
+            frame_source=source,
+        )
+        detector._model = model
+
+        with self.assertRaisesRegex(RuntimeError, "camera close failed"):
+            detector.close()
+
+        self.assertTrue(source.closed)
+        self.assertIsNone(detector._model)
+        self.assertIsNone(model.predictor)
 
     def test_tied_vote_is_rejected(self):
         source = FakeFrameSource()
