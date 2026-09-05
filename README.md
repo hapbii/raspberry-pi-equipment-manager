@@ -84,11 +84,22 @@ raspberry-pi-equipment-manager/instance/equipment.db
 
 나중에 Raspberry Pi 인식 장치를 여러 대 설치하고 모든 장치가 같은 재고를 동시에 수정해야 한다면 그때는 중앙 서버의 PostgreSQL 같은 DB로 변경하는 것이 좋습니다. 현재 한 대 구성에서는 SQLite를 그대로 사용합니다.
 
-명령어 상자 안의 내용을 한 줄씩 복사하고 `Enter`를 누르면 됩니다. 명령 앞에 보이는 `$`나 `>` 표시는 입력하지 않습니다.
+명령어 상자 안의 내용을 한 줄씩 복사하고 `Enter`를 누르면 됩니다. 명령 앞에 보이는 `$`나 `>` 표시는 입력하지 않습니다. 이 문서의 모든 명령어 상자 바로 위에는 실행할 기기를 다음처럼 표시했습니다.
+
+| 표시 | 어디에서 실행하나요? |
+|---|---|
+| `실행 위치: Windows PC의 PowerShell` | Windows 시작 메뉴에서 PowerShell을 열어 입력 |
+| `실행 위치: Raspberry Pi 터미널` | PC에서 Pi에 SSH로 접속한 뒤 나타나는 Pi 명령줄에 입력 |
+| `편집 위치: Raspberry Pi의 .env 파일` | Pi 터미널에서 `nano .env`를 연 화면에 작성 |
+| `확인 위치: Google Colab` | 웹 브라우저에서 연 Colab 학습 노트북에서 확인 |
+
+명령어가 여러 줄 들어 있는 상자는 위에서 아래 순서대로 모두 같은 위치에서 실행합니다.
 
 `<PI_USER>`, `<PI_IP>`, `<모델이_있는_경로>`처럼 꺾쇠괄호로 표시한 부분은 그대로 입력하지 말고 자신의 값으로 바꿉니다.
 
 예를 들어 Pi 사용자명이 `equipment`, IP가 `192.168.0.25`라면 다음과 같습니다.
+
+> **실행 위치: Windows PC의 PowerShell**
 
 ```powershell
 ssh equipment@192.168.0.25
@@ -170,17 +181,23 @@ Windows에서 시작 메뉴를 열고 `PowerShell`을 실행합니다.
 
 사용자 이름을 Imager에서 정한 이름으로 바꿔 입력합니다.
 
+> **실행 위치: Windows PC의 PowerShell**
+
 ```powershell
 ssh <PI_USER>@equipment-pi.local
 ```
 
 예시:
 
+> **실행 위치: Windows PC의 PowerShell**
+
 ```powershell
 ssh equipment@equipment-pi.local
 ```
 
 처음 접속할 때 연결을 계속할지 묻는 메시지가 나오면 다음을 입력합니다.
+
+> **입력 위치: 위 SSH 명령을 실행한 Windows PC의 PowerShell**
 
 ```text
 yes
@@ -189,6 +206,8 @@ yes
 그다음 Imager에서 설정한 Pi 비밀번호를 입력합니다.
 
 `equipment-pi.local`로 연결되지 않으면 공유기 관리 화면에서 Pi의 IP를 확인한 뒤 다음처럼 접속합니다.
+
+> **실행 위치: Windows PC의 PowerShell**
 
 ```powershell
 ssh <PI_USER>@<PI_IP>
@@ -200,7 +219,7 @@ ssh <PI_USER>@<PI_IP>
 equipment@equipment-pi:~ $
 ```
 
-이제부터 `bash`라고 적힌 명령은 이 Pi 터미널에 입력합니다.
+이제부터 명령어 위에 **Raspberry Pi 터미널**이라고 표시된 내용은 이 Pi 명령줄에 입력합니다. **Windows PC의 PowerShell**이라고 표시된 명령은 SSH 안이 아니라 Windows PowerShell 창에서 실행합니다.
 
 > 학교 Wi-Fi는 기기끼리 통신을 차단할 수 있습니다. 처음 설치할 때는 집 공유기나 휴대전화 핫스팟을 이용하면 문제를 구분하기 쉽습니다.
 
@@ -209,6 +228,8 @@ equipment@equipment-pi:~ $
 # 2부. 카메라가 정상인지 확인하기
 
 Pi 터미널에서 프로그램 목록을 갱신하고 필요한 프로그램을 설치합니다.
+
+> **실행 위치: Raspberry Pi 터미널(SSH 접속 후)**
 
 ```bash
 sudo apt update
@@ -220,11 +241,15 @@ sudo apt install -y git python3-venv python3-picamera2 python3-opencv rpicam-app
 
 공식 Raspberry Pi 카메라라면 다음 명령으로 사진을 찍습니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 rpicam-still --output camera-test.jpg
 ```
 
 촬영 파일이 생겼는지 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 ls -lh camera-test.jpg
@@ -239,6 +264,8 @@ ls -lh camera-test.jpg
 Raspberry Pi OS Bookworm 이후 버전에서는 카메라 명령이 `libcamera-*`가 아니라 `rpicam-*`로 시작합니다.
 
 USB 웹캠을 사용할 경우 다음 명령으로 장치가 있는지 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 ls -l /dev/video*
@@ -256,11 +283,15 @@ ls -l /dev/video*
 
 Pi 터미널에서 홈 폴더로 이동합니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 cd ~
 ```
 
 프로젝트를 내려받습니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
@@ -275,11 +306,15 @@ git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
 
 성공하면 폴더로 이동합니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 cd ~/raspberry-pi-equipment-manager
 ```
 
 파일이 내려받아졌는지 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 ls
@@ -294,6 +329,8 @@ README.md  equipment_manager  scripts  training  requirements-pi.txt
 ## 3-2. 프로젝트 전용 Python 환경 만들기
 
 다음 명령을 차례대로 실행합니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
 
 ```bash
 python3 -m venv --system-site-packages .venv
@@ -312,6 +349,8 @@ python -m pip install -r requirements-pi.txt
 
 나중에 새 터미널을 열었을 때 `(.venv)`가 없다면 프로젝트 폴더에서 다음 명령을 다시 실행합니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
 ```bash
 source .venv/bin/activate
 ```
@@ -321,6 +360,8 @@ source .venv/bin/activate
 # 4부. 설정 파일 만들기
 
 프로젝트 폴더와 가상환경이 활성화된 상태에서 실행합니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
 
 ```bash
 python scripts/create_env.py
@@ -342,6 +383,8 @@ python scripts/create_env.py
 
 모델이 아직 없다면 기본 `mock` 모드로 웹사이트와 대여·반납을 먼저 확인할 수 있습니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
+
 ```bash
 python -m waitress --listen=0.0.0.0:8080 --threads=2 wsgi:app
 ```
@@ -359,6 +402,8 @@ http://equipment-pi.local:8080
 ```
 
 접속되지 않으면 Pi에서 `hostname -I`를 실행해 IP를 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 hostname -I
@@ -386,11 +431,15 @@ Windows PC에서 모델이 들어 있는 폴더를 엽니다. 폴더의 빈 곳�
 
 Windows PowerShell에서 실행합니다.
 
+> **실행 위치: Windows PC의 PowerShell(모델 파일이 있는 폴더)**
+
 ```powershell
 scp "<모델이_있는_경로>\best.pt" <PI_USER>@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
 ```
 
 예시:
+
+> **실행 위치: Windows PC의 PowerShell**
 
 ```powershell
 scp "C:\Users\student\Downloads\best.pt" equipment@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
@@ -398,11 +447,15 @@ scp "C:\Users\student\Downloads\best.pt" equipment@equipment-pi.local:~/raspberr
 
 ## 6-2. NCNN 모델 폴더를 복사하는 경우
 
+> **실행 위치: Windows PC의 PowerShell(모델 폴더가 있는 위치)**
+
 ```powershell
 scp -r "<모델이_있는_경로>\best_ncnn_model" <PI_USER>@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
 ```
 
 예시:
+
+> **실행 위치: Windows PC의 PowerShell**
 
 ```powershell
 scp -r "C:\Users\student\Downloads\best_ncnn_model" equipment@equipment-pi.local:~/raspberry-pi-equipment-manager/models/
@@ -411,6 +464,8 @@ scp -r "C:\Users\student\Downloads\best_ncnn_model" equipment@equipment-pi.local
 Pi 비밀번호를 입력한 뒤 복사가 끝날 때까지 기다립니다.
 
 Pi 터미널로 돌아가 모델을 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
@@ -427,6 +482,8 @@ ls -la models
 
 Pi 터미널에서 설정 파일을 엽니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 cd ~/raspberry-pi-equipment-manager
 nano .env
@@ -435,6 +492,8 @@ nano .env
 방향키로 이동해 아래 항목을 찾고 수정합니다.
 
 ## 7-1. NCNN 모델과 공식 Pi 카메라를 사용하는 설정
+
+> **편집 위치: Raspberry Pi의 `.env` 파일(nano 화면)**
 
 ```dotenv
 DETECTOR_MODE=yolo
@@ -462,6 +521,8 @@ GPIO_ENABLED=false
 
 위 설정에서 모델 경로 한 줄만 다음처럼 바꿉니다.
 
+> **편집 위치: Raspberry Pi의 `.env` 파일(nano 화면)**
+
 ```dotenv
 YOLO_MODEL_PATH=models/best.pt
 ```
@@ -469,6 +530,8 @@ YOLO_MODEL_PATH=models/best.pt
 ## 7-3. USB 카메라를 사용하는 경우
 
 카메라 부분을 다음처럼 바꿉니다.
+
+> **편집 위치: Raspberry Pi의 `.env` 파일(nano 화면)**
 
 ```dotenv
 CAMERA_BACKEND=opencv
@@ -479,6 +542,8 @@ CAMERA_INDEX=0
 
 아래 줄은 모델의 이름과 웹사이트의 기자재 이름을 연결합니다.
 
+> **편집 위치: Raspberry Pi의 `.env` 파일(nano 화면)**
+
 ```dotenv
 YOLO_CLASS_ALIASES='{"multimeter":"멀티미터","arduino":"아두이노","breadboard":"브레드보드"}'
 ```
@@ -487,6 +552,8 @@ YOLO_CLASS_ALIASES='{"multimeter":"멀티미터","arduino":"아두이노","bread
 
 예를 들어 모델 클래스가 다음과 같다면:
 
+> **확인 위치: Google Colab 학습용 `data.yaml` 파일**
+
 ```yaml
 names:
   0: meter
@@ -494,6 +561,8 @@ names:
 ```
 
 설정은 다음처럼 작성합니다.
+
+> **편집 위치: Raspberry Pi의 `.env` 파일(nano 화면)**
 
 ```dotenv
 YOLO_CLASS_ALIASES='{"meter":"멀티미터","uno":"아두이노"}'
@@ -504,6 +573,8 @@ YOLO_CLASS_ALIASES='{"meter":"멀티미터","uno":"아두이노"}'
 ## 7-5. nano에서 저장하기
 
 수정을 완료한 뒤 다음 순서로 누릅니다.
+
+> **입력 위치: Raspberry Pi 터미널에서 열린 nano 화면**
 
 1. `Ctrl+O`: 저장
 2. `Enter`: 파일 이름 확인
@@ -516,6 +587,8 @@ YOLO_CLASS_ALIASES='{"meter":"멀티미터","uno":"아두이노"}'
 카메라 앞에 인식할 기자재 하나만 놓습니다. 배경을 단순하게 하고 물체 전체가 화면에 들어오게 합니다.
 
 Pi 터미널에서 실행합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
@@ -552,6 +625,8 @@ Raspberry Pi 4B 2GB는 메모리가 적으므로 실제 모델로 반복 검사�
 
 카메라 앞에 기자재를 놓고 먼저 50회 검사합니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
+
 ```bash
 python scripts/memory_soak_test.py --scans 50 --interval 0.3 --max-growth-mb 120
 ```
@@ -567,6 +642,8 @@ python scripts/memory_soak_test.py --scans 50 --interval 0.3 --max-growth-mb 120
 
 최종 배포 전에는 200회도 확인합니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
+
 ```bash
 python scripts/memory_soak_test.py --scans 200 --interval 0.5 --max-growth-mb 120
 ```
@@ -578,6 +655,8 @@ python scripts/memory_soak_test.py --scans 200 --interval 0.5 --max-growth-mb 12
 # 10부. 웹사이트 실제 실행하기
 
 진단과 메모리 검사를 통과한 뒤 실행합니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
 
 ```bash
 MALLOC_ARENA_MAX=2 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 \
@@ -616,11 +695,15 @@ http://<PI_IP>:8080
 
 수동 웹 실행을 먼저 확인하고 `Ctrl+C`로 종료합니다. 그다음 실행합니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
 ```bash
 sudo bash deploy/install_service.sh
 ```
 
 설치가 끝나면 상태를 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 sudo systemctl status equipment-manager.service
@@ -638,6 +721,8 @@ Active: active (running)
 
 웹 서버 로그를 실시간으로 보려면 다음을 실행합니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 journalctl -u equipment-manager.service -f
 ```
@@ -645,6 +730,8 @@ journalctl -u equipment-manager.service -f
 로그 화면은 `Ctrl+C`로 종료합니다. 서비스를 설치한 뒤에는 SSH 연결을 닫아도 웹사이트가 계속 실행되고, Pi를 재부팅해도 자동으로 시작합니다.
 
 서비스를 다시 시작하거나 멈추는 명령:
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 sudo systemctl restart equipment-manager.service
@@ -718,6 +805,8 @@ Raspberry Pi의 8080 포트를 외부 인터넷에 직접 개방하지 않습니
 
 ## GitHub의 새 코드 받기
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 cd ~/raspberry-pi-equipment-manager
 git pull
@@ -730,6 +819,8 @@ sudo bash deploy/install_service.sh
 비공개 저장소 인증을 다시 요구하면 GitHub 사용자명과 Personal Access Token을 입력합니다.
 
 ## DB 백업
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
@@ -749,6 +840,8 @@ Pi 카메라로 학습용 원본 사진을 자동 촬영할 수 있습니다.
 
 멀티미터를 하나만 놓고 실행합니다.
 
+> **실행 위치: Raspberry Pi 터미널(카메라가 연결된 Pi)**
+
 ```bash
 cd ~/raspberry-pi-equipment-manager
 source .venv/bin/activate
@@ -756,6 +849,8 @@ python scripts/capture_samples.py multimeter --count 250 --interval 0.5
 ```
 
 다른 종류도 같은 방식으로 촬영합니다.
+
+> **실행 위치: Raspberry Pi 터미널(같은 프로젝트 폴더와 가상환경)**
 
 ```bash
 python scripts/capture_samples.py arduino --count 250 --interval 0.5
@@ -794,6 +889,8 @@ Repository not found
 
 프로젝트 폴더로 이동하고 가상환경을 켭니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 cd ~/raspberry-pi-equipment-manager
 source .venv/bin/activate
@@ -803,6 +900,8 @@ python -m pip install -r requirements-pi.txt
 ## `externally-managed-environment`가 나옵니다
 
 가상환경이 활성화되지 않은 상태입니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
@@ -814,6 +913,8 @@ source .venv/bin/activate
 ## 카메라를 찾지 못합니다
 
 먼저 자동 웹 서비스를 멈춥니다. 웹 서비스와 진단 프로그램이 카메라를 동시에 사용할 수 없기 때문입니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 sudo systemctl stop equipment-manager.service
@@ -831,6 +932,8 @@ rpicam-still --output camera-test.jpg
 
 점검 후 서비스를 다시 시작합니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 sudo systemctl start equipment-manager.service
 ```
@@ -838,6 +941,8 @@ sudo systemctl start equipment-manager.service
 ## `YOLO 모델을 찾을 수 없습니다`가 나옵니다
 
 모델과 설정을 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
@@ -847,6 +952,8 @@ grep YOLO_MODEL_PATH .env
 
 예를 들어 실제 파일이 `models/best.pt`라면 설정도 정확히 다음이어야 합니다.
 
+> **편집 위치: Raspberry Pi의 `.env` 파일**
+
 ```dotenv
 YOLO_MODEL_PATH=models/best.pt
 ```
@@ -854,6 +961,8 @@ YOLO_MODEL_PATH=models/best.pt
 ## 인식은 되지만 DB 기자재와 연결되지 않습니다
 
 오류에 표시된 모델 클래스명과 관리자 화면의 기자재명을 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
 
 ```bash
 grep YOLO_CLASS_ALIASES .env
@@ -878,11 +987,15 @@ grep YOLO_CLASS_ALIASES .env
 
 이미 자동 서비스가 8080 포트를 사용 중일 수 있습니다.
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 sudo systemctl status equipment-manager.service
 ```
 
 수동으로 실행하려면 서비스를 먼저 멈춥니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 sudo systemctl stop equipment-manager.service
@@ -891,6 +1004,8 @@ sudo systemctl stop equipment-manager.service
 ## 웹사이트가 다른 PC에서 열리지 않습니다
 
 Pi 자체에서 먼저 확인합니다.
+
+> **실행 위치: Raspberry Pi 터미널**
 
 ```bash
 curl http://127.0.0.1:8080/healthz
@@ -901,6 +1016,8 @@ hostname -I
 
 ## 재부팅 후 자동 실행되지 않습니다
 
+> **실행 위치: Raspberry Pi 터미널**
+
 ```bash
 sudo systemctl status equipment-manager.service
 journalctl -u equipment-manager.service -n 100 --no-pager
@@ -908,17 +1025,23 @@ journalctl -u equipment-manager.service -n 100 --no-pager
 
 출력된 마지막 오류부터 확인합니다. `.env`를 수정했다면 다시 설치해 설정을 반영합니다.
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
 ```bash
 sudo bash deploy/install_service.sh
 ```
 
 ## 메모리 검사에 실패합니다
 
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
+
 ```bash
 python scripts/memory_soak_test.py --scans 200 --interval 0.5
 ```
 
 종료 RSS가 계속 커지면 다음 값을 순서대로 낮춰 비교합니다.
+
+> **편집 위치: Raspberry Pi의 `.env` 파일**
 
 ```dotenv
 YOLO_IMAGE_SIZE=320
@@ -934,6 +1057,8 @@ CAMERA_HEIGHT=480
 # Windows에서 카메라 없이 기능 시험하기
 
 Windows PowerShell에서 실행합니다.
+
+> **실행 위치: Windows PC의 PowerShell**
 
 ```powershell
 git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
@@ -1004,6 +1129,8 @@ tests/                    자동 테스트
 | `/healthz` | 서버와 DB 상태 검사 |
 
 ## 자동 테스트
+
+> **실행 위치: Windows PC 또는 Raspberry Pi의 프로젝트 폴더(가상환경 활성화 후)**
 
 ```bash
 python -m compileall -q equipment_manager scripts tests wsgi.py
