@@ -8,10 +8,12 @@ from ..db import set_device_status
 from ..hardware import get_indicator
 from ..inventory import (
     InventoryError,
+    check_student_loan_eligibility,
     commit_transaction,
     create_scan_session,
     find_equipment_by_name,
     get_equipment,
+    loan_date_limits,
     list_inventory,
 )
 from ..vision import DetectionError, get_detection_service
@@ -44,7 +46,14 @@ def station_logout():
 @bp.get("/scan")
 @station_required
 def scan_page():
-    return render_template("scan.html", inventory=list_inventory())
+    minimum_due_date, default_due_date, maximum_due_date = loan_date_limits()
+    return render_template(
+        "scan.html",
+        inventory=list_inventory(),
+        minimum_due_date=minimum_due_date,
+        default_due_date=default_due_date,
+        maximum_due_date=maximum_due_date,
+    )
 
 
 @bp.post("/api/scans")
@@ -52,6 +61,11 @@ def scan_page():
 def api_create_scan():
     data = request.get_json(silent=True) or {}
     category_hint = None
+    try:
+        if str(data.get("action", "")) == "loan":
+            check_student_loan_eligibility(str(data.get("student_id", "")))
+    except InventoryError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 422
     if current_app.config["DETECTOR_MODE"] == "mock":
         try:
             equipment_id = int(data.get("mock_equipment_id", 0))
@@ -100,6 +114,7 @@ def api_create_scan():
 @station_required
 def api_create_transaction():
     data = request.get_json(silent=True) or {}
+    raw_due_date = data.get("due_date")
     try:
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
@@ -110,6 +125,7 @@ def api_create_transaction():
             student_id=str(data.get("student_id", "")),
             action=str(data.get("action", "")),
             quantity=quantity,
+            due_date=str(raw_due_date) if raw_due_date else None,
         )
         get_indicator().success()
         return jsonify({"ok": True, "transaction": result.__dict__})

@@ -24,17 +24,26 @@ def admin_login():
     if request.method == "POST":
         supplied_username = request.form.get("username", "").strip()
         supplied = request.form.get("password", "")
-        username_valid = secrets.compare_digest(
+        developer_valid = secrets.compare_digest(
             supplied_username,
-            current_app.config["ADMIN_USERNAME"],
+            current_app.config["DEVELOPER_USERNAME"],
+        ) and secrets.compare_digest(
+            supplied, current_app.config["DEVELOPER_PASSWORD"]
         )
-        password_valid = secrets.compare_digest(
-            supplied,
-            current_app.config["ADMIN_PASSWORD"],
+        teacher_username = current_app.config["TEACHER_USERNAME"]
+        teacher_password = current_app.config["TEACHER_PASSWORD"]
+        teacher_valid = bool(
+            teacher_username
+            and teacher_password
+            and secrets.compare_digest(supplied_username, teacher_username)
+            and secrets.compare_digest(supplied, teacher_password)
         )
-        if username_valid and password_valid:
-            session["admin_authenticated"] = True
-            flash("관리자로 로그인했습니다.", "success")
+        role = "developer" if developer_valid else "teacher" if teacher_valid else None
+        if role:
+            session["admin_role"] = role
+            session["admin_username"] = supplied_username
+            role_name = "개발자 관리자" if role == "developer" else "선생님 관리자"
+            flash(f"{role_name}로 로그인했습니다.", "success")
             return redirect(url_for("web.admin_page"))
         flash("관리자 아이디 또는 비밀번호가 올바르지 않습니다.", "error")
     return render_template("login.html", mode="admin")
@@ -42,7 +51,8 @@ def admin_login():
 
 @bp.post("/admin/logout")
 def admin_logout():
-    session.pop("admin_authenticated", None)
+    session.pop("admin_role", None)
+    session.pop("admin_username", None)
     flash("관리자 로그아웃을 완료했습니다.", "success")
     return redirect(url_for("web.dashboard"))
 
@@ -51,10 +61,14 @@ def admin_logout():
 @admin_required
 def admin_page():
     query = request.args.get("q", "").strip()[:80]
+    outstanding = list_outstanding()
     return render_template(
         "admin.html",
         inventory=list_inventory(),
-        outstanding=list_outstanding(),
+        outstanding=outstanding,
+        overdue_student_count=len(
+            {row["student_id"] for row in outstanding if row["overdue"]}
+        ),
         transactions=list_transactions(150, query),
         query=query,
     )
@@ -88,7 +102,8 @@ def admin_update_equipment(equipment_id: int):
 @admin_required
 def admin_reverse_transaction(transaction_id: str):
     try:
-        reverse_transaction(transaction_id)
+        actor = f"{session.get('admin_role', 'admin')}:{session.get('admin_username', '')}"
+        reverse_transaction(transaction_id, reversed_by=actor[:80])
         flash("거래를 취소하고 재고를 복구했습니다.", "success")
     except InventoryError as exc:
         flash(str(exc), "error")
@@ -101,7 +116,9 @@ def admin_export_csv():
     output = io.StringIO()
     output.write("\ufeff")
     writer = csv.writer(output)
-    writer.writerow(["거래ID", "학번", "기자재", "구분", "수량", "신뢰도", "처리시각", "취소시각"])
+    writer.writerow(
+        ["거래ID", "학번", "기자재", "구분", "수량", "반납예정일", "신뢰도", "처리시각", "취소시각"]
+    )
     for row in list_transactions(500):
         writer.writerow(
             [
@@ -110,6 +127,7 @@ def admin_export_csv():
                 row["equipment_name"],
                 row["action"],
                 row["quantity"],
+                row["due_date"] or "",
                 row["confidence"],
                 row["created_at"],
                 row["reversed_at"] or "",

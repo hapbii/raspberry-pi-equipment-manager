@@ -19,13 +19,16 @@
       <nav aria-label="주요 메뉴">
         <a class="nav-link {{ 'active' if request.endpoint == 'web.dashboard' else '' }}" href="{{ url_for('web.dashboard') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'web.dashboard' else '' }}>현황</a>
         <a class="nav-link {{ 'active' if request.endpoint in ['web.scan_page', 'web.station_login'] else '' }}" href="{{ url_for('web.scan_page') }}" {{ 'aria-current="page"'|safe if request.endpoint in ['web.scan_page', 'web.station_login'] else '' }}>대여·반납</a>
-        <a class="nav-link {{ 'active' if request.endpoint in ['web.admin_page', 'web.admin_login'] else '' }}" href="{{ url_for('web.admin_page') }}" {{ 'aria-current="page"'|safe if request.endpoint in ['web.admin_page', 'web.admin_login'] else '' }}>{{ '관리 중' if admin_authenticated else '관리자' }}</a>
+        <a class="nav-link {{ 'active' if request.endpoint in ['web.admin_page', 'web.admin_login'] else '' }}" href="{{ url_for('web.admin_page') }}" {{ 'aria-current="page"'|safe if request.endpoint in ['web.admin_page', 'web.admin_login'] else '' }}>관리자</a>
+        {% if is_developer %}
+        <a class="nav-link {{ 'active' if request.endpoint == 'web.developer_page' else '' }}" href="{{ url_for('web.developer_page') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'web.developer_page' else '' }}>시스템</a>
+        {% endif %}
       </nav>
     </div>
   </header>
 
   {% if using_default_secrets %}
-    <div class="security-warning">개발용 기본 관리자 비밀번호를 사용 중입니다. 학교 배포 전 <code>.env</code>에서 변경하세요.</div>
+    <div class="security-warning">개발용 기본 계정 비밀번호를 사용 중입니다. 학교 배포 전 <code>.env</code>에서 변경하세요.</div>
   {% endif %}
 
   <main id="main-content" class="page-shell">
@@ -37,7 +40,7 @@
 
   <footer class="site-footer">
     <strong>AI 기반 실습 기자재 관리 시스템</strong>
-    <span>학교 내부망에서 안전하게 운영하세요.</span>
+    <span>{{ admin_role_label ~ ' 로그인 중' if admin_authenticated else '학교 내부망에서 안전하게 운영하세요.' }}</span>
   </footer>
 </body>
 </html>

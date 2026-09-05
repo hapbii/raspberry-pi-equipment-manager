@@ -45,8 +45,13 @@ class Config:
     DATABASE = os.getenv("DATABASE", str(BASE_DIR / "instance" / "equipment.db"))
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+    # ADMIN_* is retained as a fallback for .env files made before role accounts.
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin1234")
+    DEVELOPER_USERNAME = os.getenv("DEVELOPER_USERNAME", ADMIN_USERNAME)
+    DEVELOPER_PASSWORD = os.getenv("DEVELOPER_PASSWORD", ADMIN_PASSWORD)
+    TEACHER_USERNAME = os.getenv("TEACHER_USERNAME", "")
+    TEACHER_PASSWORD = os.getenv("TEACHER_PASSWORD", "")
     STATION_AUTH_REQUIRED = env_bool("STATION_AUTH_REQUIRED", False)
     STATION_PIN = os.getenv("STATION_PIN", "1234")
     SESSION_COOKIE_HTTPONLY = True
@@ -86,6 +91,8 @@ class Config:
 
     SCAN_TOKEN_TTL_SECONDS = env_int("SCAN_TOKEN_TTL_SECONDS", 90)
     DUPLICATE_WINDOW_SECONDS = env_int("DUPLICATE_WINDOW_SECONDS", 5)
+    DEFAULT_LOAN_DAYS = max(0, env_int("DEFAULT_LOAN_DAYS", 7))
+    MAX_LOAN_DAYS = max(DEFAULT_LOAN_DAYS, env_int("MAX_LOAN_DAYS", 90))
     HEARTBEAT_ENABLED = env_bool("HEARTBEAT_ENABLED", True)
     HEARTBEAT_INTERVAL_SECONDS = env_int("HEARTBEAT_INTERVAL_SECONDS", 15)
     DEVICE_OFFLINE_SECONDS = env_int("DEVICE_OFFLINE_SECONDS", 45)

@@ -8,7 +8,7 @@
     <div class="auth-icon" aria-hidden="true">{{ 'A' if is_admin else 'S' }}</div>
     <p class="eyebrow">{{ 'ADMIN ACCESS' if is_admin else 'STATION ACCESS' }}</p>
     <h1>{{ '관리자 로그인' if is_admin else '인식 스테이션 로그인' }}</h1>
-    <p>{{ '기자재 수량과 거래 기록을 관리하려면 로그인하세요.' if is_admin else '보호된 대여·반납 장치에 접속하려면 PIN을 입력하세요.' }}</p>
+    <p>{{ '선생님 또는 개발자 관리자 계정으로 로그인하세요.' if is_admin else '보호된 대여·반납 장치에 접속하려면 PIN을 입력하세요.' }}</p>
     {% if is_admin %}
       <label for="admin-username">관리자 아이디</label>
       <input id="admin-username" name="username" type="text" required autofocus autocomplete="username" placeholder="관리자 아이디 입력">

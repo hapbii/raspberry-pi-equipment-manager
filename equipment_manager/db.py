@@ -41,6 +41,8 @@ def init_app_database() -> None:
         )
     schema_path = Path(__file__).with_name("schema.sql")
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    _migrate_transaction_due_dates(db)
+    _backfill_active_loans(db)
 
     count = db.execute("SELECT COUNT(*) FROM equipment").fetchone()[0]
     if count == 0:
@@ -76,6 +78,91 @@ def init_app_database() -> None:
         ),
     )
     db.commit()
+
+
+def _migrate_transaction_due_dates(db: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1]) for row in db.execute("PRAGMA table_info(transactions)").fetchall()
+    }
+    if "due_date" not in columns:
+        db.execute("ALTER TABLE transactions ADD COLUMN due_date TEXT")
+
+
+def _backfill_active_loans(db: sqlite3.Connection) -> None:
+    transaction_count = int(db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0])
+    active_loan_count = int(db.execute("SELECT COUNT(*) FROM active_loans").fetchone()[0])
+    if transaction_count == 0 or active_loan_count > 0:
+        return
+
+    rows = db.execute(
+        """
+        SELECT id, student_id, equipment_id, action, quantity, created_at, due_date
+        FROM transactions
+        WHERE reversed_at IS NULL
+        ORDER BY created_at, id
+        """
+    )
+    for row in rows:
+        quantity = int(row["quantity"])
+        if row["action"] == "loan":
+            db.execute(
+                """
+                INSERT INTO active_loans(
+                    loan_transaction_id, student_id, equipment_id,
+                    original_quantity, remaining_quantity, due_date, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["id"],
+                    row["student_id"],
+                    row["equipment_id"],
+                    quantity,
+                    quantity,
+                    row["due_date"],
+                    row["created_at"],
+                ),
+            )
+            continue
+
+        remaining = quantity
+        loans = db.execute(
+            """
+            SELECT loan_transaction_id, remaining_quantity
+            FROM active_loans
+            WHERE student_id = ? AND equipment_id = ? AND remaining_quantity > 0
+            ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at
+            """,
+            (row["student_id"], row["equipment_id"]),
+        ).fetchall()
+        for loan in loans:
+            allocated = min(remaining, int(loan["remaining_quantity"]))
+            if allocated <= 0:
+                continue
+            db.execute(
+                """
+                UPDATE active_loans
+                SET remaining_quantity = remaining_quantity - ?
+                WHERE loan_transaction_id = ?
+                """,
+                (allocated, loan["loan_transaction_id"]),
+            )
+            db.execute(
+                """
+                INSERT INTO return_allocations(
+                    return_transaction_id, loan_transaction_id, quantity
+                ) VALUES (?, ?, ?)
+                """,
+                (row["id"], loan["loan_transaction_id"], allocated),
+            )
+            remaining -= allocated
+            if remaining == 0:
+                break
+        if remaining > 0:
+            current_app.logger.warning(
+                "Could not match %s legacy return item(s) for transaction %s",
+                remaining,
+                row["id"],
+            )
 
 
 _UNCHANGED = object()

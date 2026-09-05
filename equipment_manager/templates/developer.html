@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}개발자 시스템 관리{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">DEVELOPER ONLY</p>
+    <h1>시스템 진단</h1>
+    <p>서버, 데이터베이스와 객체 인식 설정을 한 화면에서 확인합니다.</p>
+  </div>
+  <span class="role-badge developer">개발자 전용</span>
+</section>
+
+<section class="developer-summary" aria-label="시스템 상태 요약">
+  <div>
+    <span>프로세스 메모리</span>
+    <strong>{{ '%.1f'|format(memory_rss_mb) }}<small> MB</small></strong>
+    <em class="status-good">정상 응답 중</em>
+  </div>
+  <div>
+    <span>SQLite</span>
+    <strong>{{ journal_mode|upper }}</strong>
+    <em class="status-good">버전 {{ sqlite_version }}</em>
+  </div>
+  <div>
+    <span>객체 인식</span>
+    <strong>{{ detector_mode|upper }}</strong>
+    <em class="{{ 'status-warn' if inference.busy else 'status-good' }}">{{ '추론 실행 중' if inference.busy else '대기 중' }}</em>
+  </div>
+</section>
+
+<div class="developer-grid">
+  <section class="panel">
+    <div class="section-title"><h2>실행 설정</h2><p>비밀번호는 표시하지 않습니다.</p></div>
+    <dl class="system-list">
+      <div><dt>카메라 방식</dt><dd>{{ config.CAMERA_BACKEND }}</dd></div>
+      <div><dt>입력 해상도</dt><dd>{{ config.CAMERA_WIDTH }} × {{ config.CAMERA_HEIGHT }}</dd></div>
+      <div><dt>YOLO 이미지 크기</dt><dd>{{ config.YOLO_IMAGE_SIZE }}</dd></div>
+      <div><dt>추론 스레드</dt><dd>{{ config.INFERENCE_THREADS }}</dd></div>
+      <div><dt>기본 대여 기간</dt><dd>{{ config.DEFAULT_LOAN_DAYS }}일</dd></div>
+      <div><dt>최대 대여 기간</dt><dd>{{ config.MAX_LOAN_DAYS }}일</dd></div>
+      <div><dt>누적 스캔</dt><dd>{{ inference.scan_count }}</dd></div>
+      <div><dt>실패 횟수</dt><dd>{{ inference.failure_count }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <div class="section-title"><h2>파일 상태</h2><p>Raspberry Pi의 실제 경로입니다.</p></div>
+    <dl class="system-list path-list">
+      <div><dt>DB 파일</dt><dd>{{ database_path }}</dd></div>
+      <div><dt>DB 크기</dt><dd>{{ '%.2f'|format(database_size_mb) }} MB</dd></div>
+      <div><dt>모델 경로</dt><dd>{{ model_path }}</dd></div>
+      <div><dt>모델 상태</dt><dd><span class="mini-status {{ 'ok' if model_exists else 'waiting' }}">{{ '파일 확인됨' if model_exists else '아직 없음' }}</span></dd></div>
+    </dl>
+  </section>
+</div>
+
+<section class="panel developer-actions">
+  <div><h2>빠른 이동</h2><p>개발자 계정은 모든 관리 화면과 대여·반납 화면을 사용할 수 있습니다.</p></div>
+  <div class="button-row">
+    <a class="button primary" href="{{ url_for('web.admin_page') }}">재고·거래 관리</a>
+    <a class="button ghost" href="{{ url_for('web.scan_page') }}">대여·반납 화면</a>
+    <a class="button ghost" href="{{ url_for('web.healthz') }}" target="_blank" rel="noopener">상태 JSON</a>
+  </div>
+</section>
+{% endblock %}

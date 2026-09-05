@@ -2,8 +2,9 @@
 {% block title %}관리자{% endblock %}
 {% block content %}
 <section class="page-heading">
-  <div><p class="eyebrow">ADMIN</p><h1>관리자 화면</h1><p>재고 수량을 보정하고 최근 거래 기록을 관리합니다.</p></div>
+  <div><p class="eyebrow">ADMIN</p><h1>관리자 화면</h1><p>재고 수량을 보정하고 최근 거래 기록을 관리합니다.</p><span class="role-badge {{ admin_role }}">{{ admin_role_label }}</span></div>
   <div class="button-row">
+    {% if is_developer %}<a class="button ghost" href="{{ url_for('web.developer_page') }}">시스템 진단</a>{% endif %}
     <a class="button ghost" href="{{ url_for('web.admin_export_csv') }}">CSV 내보내기</a>
     <form method="post" action="{{ url_for('web.admin_logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -16,6 +17,7 @@
   <div><span>기자재 종류</span><strong>{{ inventory|length }}</strong><small>등록된 종류</small></div>
   <div><span>전체 기자재</span><strong>{{ inventory|sum(attribute='total_qty') }}</strong><small>총 보유 수량</small></div>
   <div><span>현재 미반납</span><strong>{{ outstanding|sum(attribute='quantity') }}</strong><small>대여 중 수량</small></div>
+  <div><span>연체 학생</span><strong>{{ overdue_student_count }}</strong><small>새 대여가 제한된 학번</small></div>
 </section>
 
 <nav class="admin-jump" aria-label="관리자 화면 바로가기">
@@ -49,11 +51,16 @@
   <div class="section-title"><h2>현재 미반납</h2><p>취소되지 않은 거래를 학생·기자재별로 합산합니다.</p></div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>학번</th><th>기자재</th><th>미반납 수량</th><th>최근 활동</th></tr></thead>
+      <thead><tr><th>학번</th><th>기자재</th><th>미반납 수량</th><th>가장 빠른 반납일</th><th>상태</th><th>최근 활동</th></tr></thead>
       <tbody>
       {% for row in outstanding %}
-        <tr><td>{{ row.student_id }}</td><td>{{ row.equipment_name }}</td><td><strong>{{ row.quantity }}</strong></td><td data-utc="{{ row.last_activity }}">{{ row.last_activity }}</td></tr>
-      {% else %}<tr><td colspan="4" class="empty-cell">현재 미반납 기자재가 없습니다.</td></tr>{% endfor %}
+        <tr class="{{ 'overdue-row' if row.overdue else '' }}">
+          <td><strong>{{ row.student_id }}</strong></td><td>{{ row.equipment_name }}</td><td><strong>{{ row.quantity }}</strong></td>
+          <td>{{ row.due_date or '기한 미지정' }}</td>
+          <td><span class="tag {{ 'overdue' if row.overdue else 'normal' }}">{{ '연체·대여 제한' if row.overdue else '정상' }}</span></td>
+          <td data-utc="{{ row.last_activity }}">{{ row.last_activity }}</td>
+        </tr>
+      {% else %}<tr><td colspan="6" class="empty-cell">현재 미반납 기자재가 없습니다.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -68,14 +75,14 @@
   </form>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>시각</th><th>학번</th><th>기자재</th><th>구분</th><th>수량</th><th>신뢰도</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>시각</th><th>학번</th><th>기자재</th><th>구분</th><th>수량</th><th>반납 예정일</th><th>신뢰도</th><th>상태</th><th></th></tr></thead>
       <tbody>
       {% for row in transactions %}
         <tr class="{{ 'muted-row' if row.reversed_at else '' }}">
           <td data-utc="{{ row.created_at }}">{{ row.created_at }}</td>
           <td>{{ row.student_id }}</td><td>{{ row.equipment_name }}</td>
           <td><span class="tag {{ row.action }}">{{ '대여' if row.action == 'loan' else '반납' }}</span></td>
-          <td>{{ row.quantity }}</td><td>{{ '%.1f%%'|format(row.confidence * 100) if row.confidence is not none else '-' }}</td>
+          <td>{{ row.quantity }}</td><td>{{ row.due_date or '-' }}</td><td>{{ '%.1f%%'|format(row.confidence * 100) if row.confidence is not none else '-' }}</td>
           <td>{{ '취소됨' if row.reversed_at else '정상' }}</td>
           <td>
             {% if not row.reversed_at %}
@@ -86,7 +93,7 @@
             {% endif %}
           </td>
         </tr>
-      {% else %}<tr><td colspan="8" class="empty-cell">아직 거래 기록이 없습니다.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="9" class="empty-cell">아직 거래 기록이 없습니다.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

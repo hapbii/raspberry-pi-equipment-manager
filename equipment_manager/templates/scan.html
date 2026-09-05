@@ -3,7 +3,9 @@
 {% block content %}
 <section class="page-heading">
   <div><p class="eyebrow">SCAN STATION</p><h1>대여·반납 처리</h1><p>정보를 입력한 뒤 기자재를 촬영 구역에 하나만 놓아 주세요.</p></div>
-  {% if station_auth_required %}
+  {% if is_developer %}
+  <span class="role-badge developer">개발자 권한으로 접속</span>
+  {% elif station_auth_required %}
   <form method="post" action="{{ url_for('web.station_logout') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button class="button ghost" type="submit">스테이션 로그아웃</button>
@@ -26,6 +28,11 @@
     </fieldset>
     <label for="quantity">수량</label>
     <input id="quantity" type="number" min="1" max="20" value="1">
+    <div id="due-date-field" class="form-field">
+      <label for="due-date">반납 예정일</label>
+      <input id="due-date" type="date" min="{{ minimum_due_date }}" max="{{ maximum_due_date }}" value="{{ default_due_date }}">
+      <p class="field-help">기본 {{ config.DEFAULT_LOAN_DAYS }}일, 최대 {{ config.MAX_LOAN_DAYS }}일까지 선택할 수 있습니다.</p>
+    </div>
     {% if detector_mode == 'mock' %}
     <label>모의 인식 기자재
       <select id="mock-equipment">

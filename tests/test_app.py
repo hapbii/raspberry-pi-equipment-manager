@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from equipment_manager import create_app
@@ -23,8 +24,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
                 "DEFAULT_QUANTITY": 3,
                 "STATION_AUTH_REQUIRED": True,
                 "STATION_PIN": "2468",
-                "ADMIN_USERNAME": "teacher",
-                "ADMIN_PASSWORD": "test-admin",
+                "TEACHER_USERNAME": "teacher",
+                "TEACHER_PASSWORD": "test-teacher",
+                "DEVELOPER_USERNAME": "developer",
+                "DEVELOPER_PASSWORD": "test-developer",
                 "DUPLICATE_WINDOW_SECONDS": 0,
             }
         )
@@ -41,7 +44,14 @@ class EquipmentManagerTestCase(unittest.TestCase):
     def login_admin(self):
         response = self.client.post(
             "/admin/login",
-            data={"username": "teacher", "password": "test-admin"},
+            data={"username": "teacher", "password": "test-teacher"},
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def login_developer(self):
+        response = self.client.post(
+            "/admin/login",
+            data={"username": "developer", "password": "test-developer"},
         )
         self.assertEqual(response.status_code, 302)
 
@@ -53,7 +63,14 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         return response.get_json()["scan"]["token"]
 
-    def transact(self, token, student_id="30304", action="loan", quantity=1):
+    def transact(
+        self,
+        token,
+        student_id="30304",
+        action="loan",
+        quantity=1,
+        due_date=None,
+    ):
         return self.client.post(
             "/api/transactions",
             json={
@@ -61,6 +78,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
                 "student_id": student_id,
                 "action": action,
                 "quantity": quantity,
+                "due_date": due_date,
             },
         )
 
@@ -95,16 +113,46 @@ class EquipmentManagerTestCase(unittest.TestCase):
     def test_admin_requires_matching_username_and_password(self):
         rejected = self.client.post(
             "/admin/login",
-            data={"username": "wrong", "password": "test-admin"},
+            data={"username": "wrong", "password": "test-teacher"},
         )
         self.assertEqual(rejected.status_code, 200)
         self.assertIn("아이디 또는 비밀번호", rejected.get_data(as_text=True))
         with self.client.session_transaction() as current_session:
-            self.assertFalse(current_session.get("admin_authenticated", False))
+            self.assertIsNone(current_session.get("admin_role"))
 
         self.login_admin()
         with self.client.session_transaction() as current_session:
-            self.assertTrue(current_session.get("admin_authenticated", False))
+            self.assertEqual(current_session.get("admin_role"), "teacher")
+
+    def test_teacher_cannot_open_developer_page(self):
+        self.login_admin()
+        response = self.client.get("/developer")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith("/admin"))
+
+    def test_anonymous_user_is_sent_to_login_from_developer_page(self):
+        response = self.client.get("/developer")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith("/admin/login"))
+
+    def test_developer_has_full_access(self):
+        self.login_developer()
+        developer_page = self.client.get("/developer")
+        self.assertEqual(developer_page.status_code, 200)
+        developer_html = developer_page.get_data(as_text=True)
+        self.assertIn("시스템 진단", developer_html)
+        self.assertNotIn("test-developer", developer_html)
+        self.assertNotIn("test-teacher", developer_html)
+        self.assertEqual(self.client.get("/admin").status_code, 200)
+
+        # Developer access bypasses the optional station PIN.
+        scan = self.client.post("/api/scans", json={"mock_equipment_id": 1})
+        self.assertEqual(scan.status_code, 200, scan.get_json())
+
+        self.client.post("/admin/logout")
+        after_logout = self.client.get("/developer")
+        self.assertEqual(after_logout.status_code, 302)
+        self.assertTrue(after_logout.location.endswith("/admin/login"))
 
     def test_csrf_protects_login_post(self):
         self.app.config["CSRF_ENABLED"] = True
@@ -157,6 +205,86 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("미반납", response.get_json()["error"])
 
+    def test_overdue_student_cannot_borrow_until_every_overdue_item_is_returned(self):
+        self.login_station()
+        first, second = self.client.get("/api/status").get_json()["inventory"]
+        tomorrow = (datetime.now().astimezone().date() + timedelta(days=1)).isoformat()
+        loan = self.transact(
+            self.scan(first["id"]),
+            student_id="30999",
+            quantity=2,
+            due_date=tomorrow,
+        )
+        self.assertEqual(loan.status_code, 200, loan.get_json())
+        self.assertEqual(loan.get_json()["transaction"]["due_date"], tomorrow)
+
+        yesterday = (datetime.now().astimezone().date() - timedelta(days=1)).isoformat()
+        with self.app.app_context():
+            from equipment_manager.db import get_db
+
+            db = get_db()
+            db.execute(
+                "UPDATE active_loans SET due_date = ? WHERE student_id = ?",
+                (yesterday, "30999"),
+            )
+            db.commit()
+
+        scans_before = self.client.get("/healthz").get_json()["inference"]["scan_count"]
+        early_block = self.client.post(
+            "/api/scans",
+            json={
+                "mock_equipment_id": second["id"],
+                "student_id": "30999",
+                "action": "loan",
+            },
+        )
+        self.assertEqual(early_block.status_code, 422)
+        self.assertIn("연체", early_block.get_json()["error"])
+        scans_after = self.client.get("/healthz").get_json()["inference"]["scan_count"]
+        self.assertEqual(scans_before, scans_after)
+
+        self.login_admin()
+        admin_page = self.client.get("/admin")
+        self.assertIn("연체·대여 제한", admin_page.get_data(as_text=True))
+        self.assertIn(yesterday, admin_page.get_data(as_text=True))
+
+        blocked_token = self.scan(second["id"])
+        blocked = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        self.assertEqual(blocked.status_code, 422)
+        self.assertIn("연체", blocked.get_json()["error"])
+
+        partial_return = self.transact(
+            self.scan(first["id"]), student_id="30999", action="return", quantity=1
+        )
+        self.assertEqual(partial_return.status_code, 200, partial_return.get_json())
+        still_blocked = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        self.assertEqual(still_blocked.status_code, 422)
+
+        final_return = self.transact(
+            self.scan(first["id"]), student_id="30999", action="return", quantity=1
+        )
+        self.assertEqual(final_return.status_code, 200, final_return.get_json())
+        allowed = self.transact(blocked_token, student_id="30999", due_date=tomorrow)
+        self.assertEqual(allowed.status_code, 200, allowed.get_json())
+
+    def test_due_date_must_be_within_configured_range(self):
+        self.login_station()
+        item = self.first_equipment()
+        today = datetime.now().astimezone().date()
+        past = self.transact(
+            self.scan(item["id"]),
+            due_date=(today - timedelta(days=1)).isoformat(),
+        )
+        self.assertEqual(past.status_code, 422)
+        self.assertIn("오늘보다 이전", past.get_json()["error"])
+
+        too_far = self.transact(
+            self.scan(item["id"]),
+            due_date=(today + timedelta(days=91)).isoformat(),
+        )
+        self.assertEqual(too_far.status_code, 422)
+        self.assertIn("최대", too_far.get_json()["error"])
+
     def test_admin_can_reverse_transaction(self):
         self.login_station()
         item = self.first_equipment()
@@ -166,6 +294,37 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         restored = next(
             row for row in self.client.get("/api/status").get_json()["inventory"]
+            if row["id"] == item["id"]
+        )
+        self.assertEqual(restored["available_qty"], restored["total_qty"])
+
+    def test_admin_reversals_keep_active_loan_allocations_consistent(self):
+        self.login_station()
+        item = self.first_equipment()
+        loan = self.transact(
+            self.scan(item["id"]), student_id="30777", quantity=2
+        ).get_json()["transaction"]
+        returned = self.transact(
+            self.scan(item["id"]),
+            student_id="30777",
+            action="return",
+            quantity=1,
+        ).get_json()["transaction"]
+        self.login_admin()
+
+        cannot_reverse_loan = self.client.post(
+            f"/admin/transactions/{loan['transaction_id']}/reverse",
+            follow_redirects=True,
+        )
+        self.assertIn("반납된 대여는 취소할 수 없습니다", cannot_reverse_loan.get_data(as_text=True))
+
+        self.client.post(
+            f"/admin/transactions/{returned['transaction_id']}/reverse"
+        )
+        self.client.post(f"/admin/transactions/{loan['transaction_id']}/reverse")
+        restored = next(
+            row
+            for row in self.client.get("/api/status").get_json()["inventory"]
             if row["id"] == item["id"]
         )
         self.assertEqual(restored["available_qty"], restored["total_qty"])

@@ -91,7 +91,23 @@
     const message = document.querySelector("#scan-message");
     const studentInput = document.querySelector("#student-id");
     const quantityInput = document.querySelector("#quantity");
+    const dueDateField = document.querySelector("#due-date-field");
+    const dueDateInput = document.querySelector("#due-date");
+    const actionInputs = document.querySelectorAll('input[name="action"]');
     let scanToken = null;
+
+    function selectedAction() {
+      return document.querySelector('input[name="action"]:checked')?.value;
+    }
+
+    function syncDueDateField() {
+      const isLoan = selectedAction() === "loan";
+      dueDateField.classList.toggle("hidden", !isLoan);
+      dueDateInput.required = isLoan;
+    }
+
+    actionInputs.forEach((input) => input.addEventListener("change", syncDueDateField));
+    syncDueDateField();
 
     function showMessage(text, success = false) {
       message.textContent = text;
@@ -113,6 +129,9 @@
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
         return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
       }
+      if (selectedAction() === "loan" && !dueDateInput.value) {
+        return showMessage("반납 예정일을 선택해 주세요.");
+      }
       detectButton.disabled = true;
       detectButton.setAttribute("aria-busy", "true");
       detectButton.textContent = "인식 중...";
@@ -120,6 +139,8 @@
         const mockSelect = document.querySelector("#mock-equipment");
         const data = await postJson("/api/scans", {
           mock_equipment_id: mockSelect ? Number(mockSelect.value) : undefined,
+          student_id: studentInput.value.trim(),
+          action: selectedAction(),
         });
         scanToken = data.scan.token;
         document.querySelector("#result-name").textContent = data.scan.equipment_name;
@@ -140,7 +161,7 @@
     confirmButton.addEventListener("click", async () => {
       const studentId = studentInput.value.trim();
       const quantity = Number(quantityInput.value);
-      const action = document.querySelector('input[name="action"]:checked')?.value;
+      const action = selectedAction();
       if (!studentId) return showMessage("학번을 입력해 주세요.");
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       confirmButton.disabled = true;
@@ -148,11 +169,16 @@
       confirmButton.textContent = "저장 중...";
       try {
         const data = await postJson("/api/transactions", {
-          scan_token: scanToken, student_id: studentId, action, quantity,
+          scan_token: scanToken,
+          student_id: studentId,
+          action,
+          quantity,
+          due_date: action === "loan" ? dueDateInput.value : null,
         });
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
-        showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다. 현재 사용 가능 ${tx.available_qty}개`, true);
+        const dueText = tx.due_date ? ` · 반납 예정 ${tx.due_date}` : "";
+        showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다${dueText}. 현재 사용 가능 ${tx.available_qty}개`, true);
         studentInput.value = "";
         quantityInput.value = "1";
         scanToken = null;
