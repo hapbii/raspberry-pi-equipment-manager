@@ -43,7 +43,10 @@
       <label>전체<input type="number" name="total_qty" min="0" value="{{ item.total_qty }}" required></label>
       <label>사용 가능<input type="number" name="available_qty" min="0" value="{{ item.available_qty }}" required></label>
       <label>대여 기간(일)<input type="number" name="loan_period_days" min="0" max="{{ config.MAX_LOAN_DAYS }}" value="{{ item.loan_period_days }}" required></label>
-      <button class="button small" type="submit">수정</button>
+      <div class="inventory-actions">
+        <button class="button small" type="submit">수정</button>
+        <button class="button danger small" type="submit" formmethod="post" formaction="{{ url_for('web.admin_remove_equipment', equipment_id=item.id) }}" onclick="return confirm('이 기자재 종류를 제거할까요? 미반납 물품이 있으면 제거되지 않습니다.')">제거</button>
+      </div>
     </form>
     {% endfor %}
   </div>
@@ -69,7 +72,7 @@
 </section>
 
 <section id="transaction-history" class="panel anchor-section">
-  <div class="section-title"><h2>최근 거래</h2><p>취소하면 반대 방향으로 재고가 복구되며 기록은 삭제되지 않습니다.</p></div>
+  <div class="section-title"><h2>최근 거래</h2><p>취소하면 재고가 복구됩니다.{% if is_developer %} 취소된 기록은 개발자만 영구 삭제할 수 있습니다.{% endif %}</p></div>
   <form class="transaction-search" method="get" action="{{ url_for('web.admin_page') }}">
     <input name="q" value="{{ query }}" placeholder="학번 또는 기자재 이름 검색">
     <button class="button" type="submit">검색</button>
@@ -77,7 +80,7 @@
   </form>
   <div class="table-scroll">
     <table>
-      <thead><tr><th>시각</th><th>학번</th><th>기자재</th><th>구분</th><th>수량</th><th>반납 예정일</th><th>신뢰도</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>시각</th><th>학번</th><th>기자재</th><th>구분</th><th>수량</th><th>반납 예정일</th><th>신뢰도</th><th>상태</th><th>관리</th></tr></thead>
       <tbody>
       {% for row in transactions %}
         <tr class="{{ 'muted-row' if row.reversed_at else '' }}">
@@ -91,6 +94,11 @@
             <form method="post" action="{{ url_for('web.admin_reverse_transaction', transaction_id=row.id) }}" onsubmit="return confirm('이 거래를 취소하고 재고를 복구할까요?')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="button danger small" type="submit">취소</button>
+            </form>
+            {% elif is_developer %}
+            <form method="post" action="{{ url_for('web.admin_delete_transaction', transaction_id=row.id) }}" onsubmit="return confirm('이 취소 기록을 영구 삭제할까요? 삭제 후에는 복구할 수 없습니다.')">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="button danger small" type="submit">삭제</button>
             </form>
             {% endif %}
           </td>

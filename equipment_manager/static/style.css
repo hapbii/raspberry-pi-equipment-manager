@@ -229,10 +229,11 @@ legend { margin-bottom: 7px; color: var(--navy); font-weight: 700; font-size: .8
 .equipment-add label:nth-of-type(2), .equipment-add label:nth-of-type(3) { max-width: 150px; }
 .equipment-add input, .transaction-search input { margin: 0; }
 .transaction-search input { max-width: 360px; }
-.inventory-edit { display: grid; grid-template-columns: 1fr 115px 115px 145px auto; gap: 12px; align-items: end; padding: 12px; border-radius: 12px; background: var(--soft); }
+.inventory-edit { display: grid; grid-template-columns: minmax(130px, 1fr) 105px 105px 130px auto; gap: 10px; align-items: end; padding: 12px; border-radius: 12px; background: var(--soft); }
 .inventory-edit strong { align-self: center; color: var(--navy); }
 .inventory-edit label { margin: 0; font-size: .75rem; }
 .inventory-edit input { margin-top: 3px; padding: 8px; }
+.inventory-actions { display: flex; gap: 6px; }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 th { padding: 11px; text-align: left; color: white; background: var(--navy); }

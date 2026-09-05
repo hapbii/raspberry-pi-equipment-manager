@@ -80,19 +80,49 @@ def add_equipment(name: str, total_qty: int, loan_period_days: int) -> None:
     db = get_db()
     now = utc_now()
     try:
-        db.execute(
-            """
-            INSERT INTO equipment(
-                name, total_qty, available_qty, loan_period_days,
-                active, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 1, ?, ?)
-            """,
-            (clean_name, total_qty, total_qty, loan_period_days, now, now),
-        )
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            "SELECT id, active FROM equipment WHERE name = ?",
+            (clean_name,),
+        ).fetchone()
+        if existing and int(existing["active"]) == 1:
+            raise InventoryError("이미 등록된 기자재 이름입니다.")
+        if existing:
+            db.execute(
+                """
+                UPDATE equipment
+                SET total_qty = ?, available_qty = ?, loan_period_days = ?,
+                    active = 1, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    total_qty,
+                    total_qty,
+                    loan_period_days,
+                    now,
+                    existing["id"],
+                ),
+            )
+        else:
+            db.execute(
+                """
+                INSERT INTO equipment(
+                    name, total_qty, available_qty, loan_period_days,
+                    active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 1, ?, ?)
+                """,
+                (clean_name, total_qty, total_qty, loan_period_days, now, now),
+            )
         db.commit()
+    except InventoryError:
+        db.rollback()
+        raise
     except sqlite3.IntegrityError as exc:
         db.rollback()
         raise InventoryError("이미 등록된 기자재 이름입니다.") from exc
+    except Exception:
+        db.rollback()
+        raise
 
 
 def create_scan_session(equipment_id: int, confidence: float) -> dict:
@@ -202,7 +232,7 @@ def commit_transaction(
             SELECT s.*, e.name, e.total_qty, e.available_qty, e.loan_period_days
             FROM scan_sessions s
             JOIN equipment e ON e.id = s.equipment_id
-            WHERE s.token = ?
+            WHERE s.token = ? AND e.active = 1
             """,
             (scan_token,),
         ).fetchone()
@@ -424,6 +454,78 @@ def update_equipment(
         db.rollback()
         raise InventoryError("기자재를 찾을 수 없습니다.")
     db.commit()
+
+
+def deactivate_equipment(equipment_id: int) -> None:
+    db = get_db()
+    now = utc_now()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        equipment = db.execute(
+            "SELECT name FROM equipment WHERE id = ? AND active = 1",
+            (equipment_id,),
+        ).fetchone()
+        if not equipment:
+            raise InventoryError("기자재를 찾을 수 없습니다.")
+        outstanding = int(
+            db.execute(
+                """
+                SELECT COALESCE(SUM(remaining_quantity), 0)
+                FROM active_loans
+                WHERE equipment_id = ? AND remaining_quantity > 0
+                """,
+                (equipment_id,),
+            ).fetchone()[0]
+        )
+        if outstanding > 0:
+            raise InventoryError(
+                f"{equipment['name']}의 미반납 수량 {outstanding}개가 있어 제거할 수 없습니다."
+            )
+        db.execute(
+            "UPDATE equipment SET active = 0, updated_at = ? WHERE id = ?",
+            (now, equipment_id),
+        )
+        db.execute(
+            """
+            DELETE FROM scan_sessions
+            WHERE equipment_id = ? AND consumed_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM transactions t
+                  WHERE t.scan_token = scan_sessions.token
+              )
+            """,
+            (equipment_id,),
+        )
+        db.execute(
+            """
+            UPDATE scan_sessions SET consumed_at = ?
+            WHERE equipment_id = ? AND consumed_at IS NULL
+            """,
+            (now, equipment_id),
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def delete_transaction_record(transaction_id: str) -> None:
+    db = get_db()
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        transaction = db.execute(
+            "SELECT reversed_at FROM transactions WHERE id = ?",
+            (transaction_id,),
+        ).fetchone()
+        if not transaction:
+            raise InventoryError("거래 기록을 찾을 수 없습니다.")
+        if not transaction["reversed_at"]:
+            raise InventoryError("재고 보호를 위해 거래를 먼저 취소한 뒤 삭제해 주세요.")
+        db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def reverse_transaction(transaction_id: str, reversed_by: str = "admin") -> None:

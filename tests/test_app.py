@@ -449,6 +449,125 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(unchanged["total_qty"], 3)
         self.assertEqual(unchanged["available_qty"], 3)
 
+    def test_teacher_and_developer_can_remove_and_restore_equipment(self):
+        self.login_station()
+        first, second = self.client.get("/api/status").get_json()["inventory"]
+        stale_scan_token = self.scan(first["id"])
+
+        self.login_admin()
+        removed_by_teacher = self.client.post(
+            f"/admin/equipment/{first['id']}/remove",
+            follow_redirects=True,
+        )
+        self.assertIn("기자재 종류를 제거했습니다", removed_by_teacher.get_data(as_text=True))
+        inventory = self.client.get("/api/status").get_json()["inventory"]
+        self.assertNotIn(first["id"], [row["id"] for row in inventory])
+
+        stale_transaction = self.transact(stale_scan_token)
+        self.assertEqual(stale_transaction.status_code, 422)
+        self.assertIn("유효하지 않은", stale_transaction.get_json()["error"])
+
+        restored = self.client.post(
+            "/admin/equipment",
+            data={
+                "name": first["name"],
+                "total_qty": 5,
+                "loan_period_days": 10,
+            },
+        )
+        self.assertEqual(restored.status_code, 302)
+        restored_item = next(
+            row for row in self.client.get("/api/status").get_json()["inventory"]
+            if row["name"] == first["name"]
+        )
+        self.assertEqual(restored_item["id"], first["id"])
+        self.assertEqual(restored_item["total_qty"], 5)
+        stale_after_restore = self.transact(stale_scan_token, student_id="30305")
+        self.assertEqual(stale_after_restore.status_code, 422)
+
+        self.login_developer()
+        removed_by_developer = self.client.post(
+            f"/admin/equipment/{second['id']}/remove",
+            follow_redirects=True,
+        )
+        self.assertIn("기자재 종류를 제거했습니다", removed_by_developer.get_data(as_text=True))
+
+    def test_equipment_with_outstanding_loan_cannot_be_removed(self):
+        self.login_station()
+        item = self.first_equipment()
+        loan = self.transact(self.scan(item["id"]), student_id="30888")
+        self.assertEqual(loan.status_code, 200, loan.get_json())
+
+        self.login_admin()
+        rejected = self.client.post(
+            f"/admin/equipment/{item['id']}/remove",
+            follow_redirects=True,
+        )
+        self.assertIn("미반납 수량 1개", rejected.get_data(as_text=True))
+        self.assertIn(
+            item["id"],
+            [
+                row["id"]
+                for row in self.client.get("/api/status").get_json()["inventory"]
+            ],
+        )
+
+    def test_only_developer_can_delete_cancelled_transaction_record(self):
+        self.login_station()
+        item = self.first_equipment()
+        transaction = self.transact(
+            self.scan(item["id"]),
+            student_id="30701",
+        ).get_json()["transaction"]
+        transaction_id = transaction["transaction_id"]
+
+        self.login_admin()
+        denied = self.client.post(f"/admin/transactions/{transaction_id}/delete")
+        self.assertEqual(denied.status_code, 302)
+        self.assertTrue(denied.location.endswith("/admin"))
+
+        self.login_developer()
+        not_cancelled = self.client.post(
+            f"/admin/transactions/{transaction_id}/delete",
+            follow_redirects=True,
+        )
+        self.assertIn("먼저 취소", not_cancelled.get_data(as_text=True))
+
+        self.login_admin()
+        self.client.post(f"/admin/transactions/{transaction_id}/reverse")
+        teacher_page = self.client.get("/admin").get_data(as_text=True)
+        self.assertNotIn(
+            f"/admin/transactions/{transaction_id}/delete",
+            teacher_page,
+        )
+
+        self.login_developer()
+        developer_page = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn(
+            f"/admin/transactions/{transaction_id}/delete",
+            developer_page,
+        )
+        deleted = self.client.post(
+            f"/admin/transactions/{transaction_id}/delete",
+            follow_redirects=True,
+        )
+        self.assertIn("영구 삭제했습니다", deleted.get_data(as_text=True))
+
+        with self.app.app_context():
+            from equipment_manager.db import get_db
+
+            self.assertIsNone(
+                get_db().execute(
+                    "SELECT id FROM transactions WHERE id = ?",
+                    (transaction_id,),
+                ).fetchone()
+            )
+        restored = next(
+            row for row in self.client.get("/api/status").get_json()["inventory"]
+            if row["id"] == item["id"]
+        )
+        self.assertEqual(restored["available_qty"], restored["total_qty"])
+
 
 if __name__ == "__main__":
     unittest.main()

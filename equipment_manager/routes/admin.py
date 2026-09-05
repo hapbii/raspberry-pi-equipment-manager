@@ -9,6 +9,8 @@ from flask import current_app, flash, redirect, render_template, request, sessio
 from ..inventory import (
     InventoryError,
     add_equipment,
+    deactivate_equipment,
+    delete_transaction_record,
     list_inventory,
     list_outstanding,
     list_transactions,
@@ -16,7 +18,7 @@ from ..inventory import (
     update_equipment,
 )
 from . import bp
-from .common import admin_required
+from .common import admin_required, developer_required
 
 
 @bp.route("/admin/login", methods=["GET", "POST"])
@@ -103,6 +105,17 @@ def admin_update_equipment(equipment_id: int):
     return redirect(url_for("web.admin_page"))
 
 
+@bp.post("/admin/equipment/<int:equipment_id>/remove")
+@admin_required
+def admin_remove_equipment(equipment_id: int):
+    try:
+        deactivate_equipment(equipment_id)
+        flash("기자재 종류를 제거했습니다. 기존 거래 기록은 보존됩니다.", "success")
+    except InventoryError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("web.admin_page"))
+
+
 @bp.post("/admin/transactions/<transaction_id>/reverse")
 @admin_required
 def admin_reverse_transaction(transaction_id: str):
@@ -110,6 +123,17 @@ def admin_reverse_transaction(transaction_id: str):
         actor = f"{session.get('admin_role', 'admin')}:{session.get('admin_username', '')}"
         reverse_transaction(transaction_id, reversed_by=actor[:80])
         flash("거래를 취소하고 재고를 복구했습니다.", "success")
+    except InventoryError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("web.admin_page"))
+
+
+@bp.post("/admin/transactions/<transaction_id>/delete")
+@developer_required
+def admin_delete_transaction(transaction_id: str):
+    try:
+        delete_transaction_record(transaction_id)
+        flash("취소된 거래 기록을 영구 삭제했습니다.", "success")
     except InventoryError as exc:
         flash(str(exc), "error")
     return redirect(url_for("web.admin_page"))
