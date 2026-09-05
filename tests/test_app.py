@@ -294,7 +294,9 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.login_station()
         scan_html = self.client.get("/scan").get_data(as_text=True)
         self.assertNotIn('id="due-date"', scan_html)
-        self.assertIn("관리자가 기자재별로 지정", scan_html)
+        self.assertNotIn("예: 30304", scan_html)
+        self.assertNotIn("관리자가 기자재별로 지정", scan_html)
+        self.assertNotIn("여러 프레임의 결과", scan_html)
         item = self.first_equipment()
         updated = self.client.post(
             f"/admin/equipment/{item['id']}",

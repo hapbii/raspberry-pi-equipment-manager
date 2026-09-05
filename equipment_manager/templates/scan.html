@@ -2,7 +2,7 @@
 {% block title %}대여·반납{% endblock %}
 {% block content %}
 <section class="page-heading">
-  <div><p class="eyebrow">SCAN STATION</p><h1>대여·반납 처리</h1><p>정보를 입력한 뒤 기자재를 촬영 구역에 하나만 놓아 주세요.</p></div>
+  <div><p class="eyebrow">SCAN STATION</p><h1>대여·반납 처리</h1></div>
   {% if is_developer %}
   <span class="role-badge developer">개발자 권한으로 접속</span>
   {% elif station_auth_required %}
@@ -19,8 +19,7 @@
   <section class="panel scan-form-panel">
     <div class="step-label"><span>1</span> 거래 정보</div>
     <label for="student-id">학번</label>
-    <input id="student-id" maxlength="30" placeholder="예: 30304" autocomplete="off" inputmode="numeric">
-    <p class="field-help">대여·반납 기록을 구분할 학번을 입력하세요.</p>
+    <input id="student-id" maxlength="30" autocomplete="off" inputmode="numeric">
     <fieldset class="action-choice">
       <legend>처리 구분</legend>
       <label><input type="radio" name="action" value="loan" checked><span>대여</span></label>
@@ -28,14 +27,12 @@
     </fieldset>
     <label for="quantity">수량</label>
     <input id="quantity" type="number" min="1" max="20" value="1">
-    <p class="field-help">반납 예정일은 관리자가 기자재별로 지정한 대여 기간에 따라 자동 결정됩니다.</p>
     {% if detector_mode == 'mock' %}
     <label>모의 인식 기자재
       <select id="mock-equipment">
         {% for item in inventory %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}
       </select>
     </label>
-    <p class="mode-note">현재는 카메라 없이 시험하는 모의 인식 모드입니다.</p>
     {% endif %}
     <button id="detect-button" class="button primary large" type="button">객체 인식 시작</button>
   </section>
@@ -44,8 +41,7 @@
     <div class="step-label"><span>2</span> 인식 결과 확인</div>
     <div id="scan-placeholder" class="scan-placeholder">
       <div class="camera-symbol"></div>
-      <strong>아직 인식하지 않았습니다.</strong>
-      <span>버튼을 누르면 여러 프레임의 결과를 비교합니다.</span>
+      <strong>인식 대기</strong>
     </div>
     <div id="scan-result" class="scan-result hidden">
       <span class="result-check">✓</span>
