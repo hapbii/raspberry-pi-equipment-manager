@@ -3,9 +3,10 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from flask import current_app, render_template
+from flask import current_app, flash, redirect, render_template, url_for
 
 from ..db import get_db
+from ..error_logs import get_error_log_store
 from ..system_metrics import current_rss_mb
 from ..vision import get_detection_service
 from . import bp
@@ -35,4 +36,17 @@ def developer_page():
         inference=get_detection_service().status(),
         model_path=model_path,
         model_exists=model_path.exists(),
+        error_log=get_error_log_store().snapshot(),
     )
+
+
+@bp.post("/developer/error-logs/clear")
+@developer_required
+def developer_clear_error_logs():
+    try:
+        get_error_log_store().clear()
+        flash("오류 로그를 모두 삭제했습니다.", "success")
+    except OSError:
+        current_app.logger.exception("Failed to clear the error log")
+        flash("오류 로그를 삭제하지 못했습니다. 파일 권한을 확인해 주세요.", "error")
+    return redirect(f"{url_for('web.developer_page')}#error-logs")

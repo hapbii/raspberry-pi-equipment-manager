@@ -9,6 +9,7 @@ from flask import Flask
 
 from .config import Config
 from .db import close_db, init_app_database
+from .error_logs import ErrorLogStore
 from .hardware import INDICATOR_KEY, init_hardware
 from .runtime import HeartbeatService
 from .vision import build_detection_service
@@ -28,6 +29,18 @@ def create_app(test_config: dict | None = None) -> Flask:
         level=getattr(logging, app.config["LOG_LEVEL"].upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    error_log_path = Path(app.config["ERROR_LOG_PATH"]).expanduser()
+    if not error_log_path.is_absolute():
+        error_log_path = Path(app.root_path).parent / error_log_path
+    error_log_store = ErrorLogStore(
+        error_log_path.resolve(),
+        max_bytes=app.config["ERROR_LOG_MAX_BYTES"],
+        backup_count=app.config["ERROR_LOG_BACKUP_COUNT"],
+        display_bytes=app.config["ERROR_LOG_DISPLAY_BYTES"],
+    )
+    app.config["ERROR_LOG_PATH"] = str(error_log_store.path)
+    app.extensions["error_log_store"] = error_log_store
 
     app.teardown_appcontext(close_db)
     init_hardware(app)
@@ -61,6 +74,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 ("heartbeat", heartbeat.stop if heartbeat is not None else None),
                 ("detection", detection_service.close),
                 ("GPIO indicator", indicator.close if indicator is not None else None),
+                ("error log", error_log_store.close),
             ]
             for name, close_service in services:
                 if close_service is None:
@@ -71,6 +85,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                     app.logger.exception("Failed to close %s service", name)
             app.extensions.pop("heartbeat_service", None)
             app.extensions.pop("detection_service", None)
+            app.extensions.pop("error_log_store", None)
             heartbeat = None
             detection_service = None
 

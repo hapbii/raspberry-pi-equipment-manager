@@ -4,8 +4,10 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from equipment_manager import create_app
+from equipment_manager.vision import DetectionError
 
 
 class EquipmentManagerTestCase(unittest.TestCase):
@@ -16,6 +18,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
             {
                 "TESTING": True,
                 "DATABASE": database,
+                "ERROR_LOG_PATH": str(Path(self.temp_dir.name) / "errors.log"),
                 "SECRET_KEY": "test-secret",
                 "CSRF_ENABLED": False,
                 "HEARTBEAT_ENABLED": False,
@@ -108,6 +111,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
 
         self.assertNotIn("detection_service", self.app.extensions)
         self.assertNotIn("heartbeat_service", self.app.extensions)
+        self.assertNotIn("error_log_store", self.app.extensions)
         self.assertTrue(detection_service.status()["closed"])
         self.assertIsNone(detection_service._detector)
 
@@ -164,6 +168,43 @@ class EquipmentManagerTestCase(unittest.TestCase):
         after_logout = self.client.get("/developer")
         self.assertEqual(after_logout.status_code, 302)
         self.assertTrue(after_logout.location.endswith("/admin/login"))
+
+    def test_only_developer_can_view_and_clear_error_logs(self):
+        marker = "camera-test-error-4821"
+        error_log_path = Path(self.app.config["ERROR_LOG_PATH"])
+        self.login_station()
+        detection_service = self.app.extensions["detection_service"]
+        with patch.object(
+            detection_service,
+            "detect",
+            side_effect=DetectionError(marker),
+        ):
+            failed_scan = self.client.post(
+                "/api/scans",
+                json={"mock_equipment_id": self.first_equipment()["id"]},
+            )
+        self.assertEqual(failed_scan.status_code, 422)
+        self.assertTrue(error_log_path.is_file())
+
+        self.login_admin()
+        rejected = self.client.post("/developer/error-logs/clear")
+        self.assertEqual(rejected.status_code, 302)
+        self.assertTrue(rejected.location.endswith("/admin"))
+        self.assertIn(marker, error_log_path.read_text(encoding="utf-8"))
+
+        self.client.post("/admin/logout")
+        self.login_developer()
+        developer_page = self.client.get("/developer").get_data(as_text=True)
+        self.assertIn("최근 오류 로그", developer_page)
+        self.assertIn(marker, developer_page)
+
+        cleared = self.client.post(
+            "/developer/error-logs/clear", follow_redirects=True
+        )
+        cleared_html = cleared.get_data(as_text=True)
+        self.assertIn("오류 로그를 모두 삭제했습니다.", cleared_html)
+        self.assertIn("기록된 오류가 없습니다.", cleared_html)
+        self.assertFalse(error_log_path.exists())
 
     def test_csrf_protects_login_post(self):
         self.app.config["CSRF_ENABLED"] = True

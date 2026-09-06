@@ -44,6 +44,15 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-before-school-use")
     DATABASE = os.getenv("DATABASE", str(BASE_DIR / "instance" / "equipment.db"))
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    ERROR_LOG_PATH = os.getenv(
+        "ERROR_LOG_PATH", str(BASE_DIR / "instance" / "errors.log")
+    )
+    ERROR_LOG_MAX_BYTES = max(64 * 1024, env_int("ERROR_LOG_MAX_BYTES", 1_000_000))
+    ERROR_LOG_BACKUP_COUNT = min(5, max(1, env_int("ERROR_LOG_BACKUP_COUNT", 2)))
+    ERROR_LOG_DISPLAY_BYTES = min(
+        256 * 1024,
+        max(8 * 1024, env_int("ERROR_LOG_DISPLAY_BYTES", 64 * 1024)),
+    )
 
     # ADMIN_* is retained as a fallback for .env files made before role accounts.
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")

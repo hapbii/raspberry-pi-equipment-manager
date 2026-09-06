@@ -91,7 +91,12 @@ def api_create_scan():
                 "memory_rss_mb": detection.memory_rss_mb,
             }
         )
-    except (DetectionError, InventoryError) as exc:
+    except DetectionError as exc:
+        current_app.logger.error("Object detection failed: %s", exc)
+        set_device_status(str(exc))
+        get_indicator().error()
+        return jsonify({"ok": False, "error": str(exc)}), 422
+    except InventoryError as exc:
         set_device_status(str(exc))
         get_indicator().error()
         return jsonify({"ok": False, "error": str(exc)}), 422
