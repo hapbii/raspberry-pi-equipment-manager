@@ -1,24 +1,18 @@
 {% extends "base.html" %}
-{% set is_admin = mode == 'admin' %}
-{% block title %}{{ '관리자' if is_admin else '인식 스테이션' }} 로그인{% endblock %}
+{% block title %}관리자 로그인{% endblock %}
 {% block content %}
 <section class="auth-wrap">
   <form class="auth-card" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="auth-icon" aria-hidden="true">{{ 'A' if is_admin else 'S' }}</div>
-    <p class="eyebrow">{{ 'ADMIN ACCESS' if is_admin else 'STATION ACCESS' }}</p>
-    <h1>{{ '관리자 로그인' if is_admin else '인식 스테이션 로그인' }}</h1>
-    <p>{{ '선생님 또는 개발자 관리자 계정으로 로그인하세요.' if is_admin else '보호된 대여·반납 장치에 접속하려면 PIN을 입력하세요.' }}</p>
-    {% if is_admin %}
-      <label for="admin-username">관리자 아이디</label>
-      <input id="admin-username" name="username" type="text" required autofocus autocomplete="username" placeholder="관리자 아이디 입력">
-      <label for="admin-password">관리자 비밀번호</label>
-      <input id="admin-password" name="password" type="password" required autocomplete="current-password" placeholder="비밀번호 입력">
-    {% else %}
-      <label for="station-pin">스테이션 PIN</label>
-      <input id="station-pin" name="pin" type="password" required autofocus inputmode="numeric" autocomplete="current-password" placeholder="PIN 입력">
-    {% endif %}
-    <button class="button primary large" type="submit">{{ '관리자 로그인' if is_admin else '스테이션 시작' }}</button>
+    <div class="auth-icon" aria-hidden="true">A</div>
+    <p class="eyebrow">ADMIN ACCESS</p>
+    <h1>관리자 로그인</h1>
+    <p>선생님 또는 개발자 관리자 계정으로 로그인하세요.</p>
+    <label for="admin-username">관리자 아이디</label>
+    <input id="admin-username" name="username" type="text" required autofocus autocomplete="username" placeholder="관리자 아이디 입력">
+    <label for="admin-password">관리자 비밀번호</label>
+    <input id="admin-password" name="password" type="password" required autocomplete="current-password" placeholder="비밀번호 입력">
+    <button class="button primary large" type="submit">관리자 로그인</button>
     <a class="auth-back" href="{{ url_for('web.dashboard') }}">← 현황 화면으로 돌아가기</a>
   </form>
 </section>

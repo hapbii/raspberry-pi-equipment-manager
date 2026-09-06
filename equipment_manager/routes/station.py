@@ -17,39 +17,26 @@ from ..inventory import (
 )
 from ..vision import DetectionError, get_detection_service
 from . import bp
-from .common import station_required
 
 
 @bp.route("/station/login", methods=["GET", "POST"])
 def station_login():
-    if not current_app.config["STATION_AUTH_REQUIRED"]:
-        flash("스테이션 PIN 없이 대여·반납 화면을 사용합니다.", "success")
-        return redirect(url_for("web.scan_page"))
-    if request.method == "POST":
-        supplied = request.form.get("pin", "")
-        if secrets.compare_digest(supplied, current_app.config["STATION_PIN"]):
-            session["station_authenticated"] = True
-            flash("인식 스테이션에 로그인했습니다.", "success")
-            return redirect(url_for("web.scan_page"))
-        flash("스테이션 PIN이 올바르지 않습니다.", "error")
-    return render_template("login.html", mode="station")
+    flash("스테이션 PIN은 최종 대여·반납 처리 단계에서 입력합니다.", "success")
+    return redirect(url_for("web.scan_page"))
 
 
 @bp.post("/station/logout")
 def station_logout():
-    session.pop("station_authenticated", None)
-    flash("인식 스테이션에서 로그아웃했습니다.", "success")
+    flash("스테이션 PIN은 거래마다 최종 처리 단계에서 확인합니다.", "success")
     return redirect(url_for("web.dashboard"))
 
 
 @bp.get("/scan")
-@station_required
 def scan_page():
     return render_template("scan.html", inventory=list_inventory())
 
 
 @bp.post("/api/scans")
-@station_required
 def api_create_scan():
     data = request.get_json(silent=True) or {}
     category_hint = None
@@ -108,9 +95,25 @@ def api_create_scan():
 
 
 @bp.post("/api/transactions")
-@station_required
 def api_create_transaction():
     data = request.get_json(silent=True) or {}
+    pin_required = (
+        current_app.config["STATION_AUTH_REQUIRED"]
+        and session.get("admin_role") != "developer"
+    )
+    if pin_required:
+        supplied_pin = str(data.get("station_pin") or "")[:128]
+        if not secrets.compare_digest(supplied_pin, current_app.config["STATION_PIN"]):
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "code": "station_pin_invalid",
+                        "error": "스테이션 PIN이 올바르지 않습니다.",
+                    }
+                ),
+                403,
+            )
     try:
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):

@@ -18,7 +18,12 @@
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({ ok: false, error: "서버 응답을 읽을 수 없습니다." }));
-    if (!response.ok || !data.ok) throw new Error(data.error || "요청 처리에 실패했습니다.");
+    if (!response.ok || !data.ok) {
+      const error = new Error(data.error || "요청 처리에 실패했습니다.");
+      error.code = data.code || "request_failed";
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
 
@@ -94,6 +99,13 @@
     const quantityInput = document.querySelector("#quantity");
     const resultLoanPeriod = document.querySelector("#result-loan-period");
     const actionInputs = document.querySelectorAll('input[name="action"]');
+    const pinRequired = scanApp.dataset.pinRequired === "true";
+    const pinDialog = document.querySelector("#station-pin-dialog");
+    const pinForm = document.querySelector("#station-pin-form");
+    const pinInput = document.querySelector("#transaction-station-pin");
+    const pinError = document.querySelector("#station-pin-error");
+    const pinCancelButton = document.querySelector("#station-pin-cancel");
+    const pinConfirmButton = document.querySelector("#station-pin-confirm");
     let scanToken = null;
     let scanDueDate = null;
     let scanLoanPeriodDays = null;
@@ -126,6 +138,7 @@
       resultLoanPeriod.classList.add("hidden");
       placeholder.classList.remove("hidden");
       message.classList.add("hidden");
+      if (pinDialog?.open) pinDialog.close();
     }
 
     detectButton.addEventListener("click", async () => {
@@ -164,21 +177,31 @@
       }
     });
 
-    confirmButton.addEventListener("click", async () => {
+    async function submitTransaction(stationPin = "") {
       const studentId = studentInput.value.trim();
       const quantity = Number(quantityInput.value);
       const action = selectedAction();
       if (!studentId) return showMessage("학번을 입력해 주세요.");
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+        if (pinDialog?.open) pinDialog.close();
+        return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
+      }
       confirmButton.disabled = true;
       confirmButton.setAttribute("aria-busy", "true");
       confirmButton.textContent = "저장 중...";
+      if (pinConfirmButton) {
+        pinConfirmButton.disabled = true;
+        pinConfirmButton.textContent = "확인 중...";
+      }
+      if (pinCancelButton) pinCancelButton.disabled = true;
       try {
         const data = await postJson("/api/transactions", {
           scan_token: scanToken,
           student_id: studentId,
           action,
           quantity,
+          station_pin: stationPin,
         });
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
@@ -189,13 +212,63 @@
         scanToken = null;
         resultPanel.classList.add("hidden");
         placeholder.classList.remove("hidden");
+        if (pinDialog?.open) pinDialog.close();
       } catch (error) {
-        showMessage(error.message);
+        if (error.code === "station_pin_invalid" && pinDialog?.open) {
+          pinError.textContent = error.message;
+          pinError.classList.remove("hidden");
+          pinInput.value = "";
+          pinInput.focus();
+        } else {
+          if (pinDialog?.open) pinDialog.close();
+          showMessage(error.message);
+        }
       } finally {
         confirmButton.disabled = false;
         confirmButton.removeAttribute("aria-busy");
         confirmButton.textContent = "이 결과로 처리";
+        if (pinConfirmButton) {
+          pinConfirmButton.disabled = false;
+          pinConfirmButton.textContent = "확인 후 처리";
+        }
+        if (pinCancelButton) pinCancelButton.disabled = false;
       }
+    }
+
+    confirmButton.addEventListener("click", () => {
+      if (!studentInput.value.trim()) return showMessage("학번을 입력해 주세요.");
+      if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
+      if (!pinRequired) {
+        submitTransaction();
+        return;
+      }
+      pinInput.value = "";
+      pinError.classList.add("hidden");
+      pinError.textContent = "";
+      if (!pinDialog.open) pinDialog.showModal();
+      window.setTimeout(() => pinInput.focus(), 0);
+    });
+
+    pinForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const stationPin = pinInput.value.trim();
+      if (!stationPin) {
+        pinError.textContent = "스테이션 PIN을 입력해 주세요.";
+        pinError.classList.remove("hidden");
+        pinInput.focus();
+        return;
+      }
+      submitTransaction(stationPin);
+    });
+
+    pinCancelButton?.addEventListener("click", () => pinDialog.close());
+    pinDialog?.addEventListener("cancel", (event) => {
+      if (pinConfirmButton.disabled) event.preventDefault();
+    });
+    pinDialog?.addEventListener("close", () => {
+      pinInput.value = "";
+      pinError.classList.add("hidden");
+      pinError.textContent = "";
     });
 
     retryButton.addEventListener("click", resetResult);

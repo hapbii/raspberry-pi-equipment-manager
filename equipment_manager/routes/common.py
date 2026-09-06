@@ -62,23 +62,6 @@ def protect_post_requests():
     return None
 
 
-def station_required(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        if (
-            not current_app.config["STATION_AUTH_REQUIRED"]
-            or session.get("admin_role") == "developer"
-        ):
-            return view(*args, **kwargs)
-        if not session.get("station_authenticated"):
-            if is_api_request():
-                return jsonify({"ok": False, "error": "인식 스테이션 로그인이 필요합니다."}), 401
-            return redirect(url_for("web.station_login"))
-        return view(*args, **kwargs)
-
-    return wrapped
-
-
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):

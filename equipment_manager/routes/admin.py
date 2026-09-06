@@ -48,7 +48,7 @@ def admin_login():
             flash(f"{role_name}로 로그인했습니다.", "success")
             return redirect(url_for("web.admin_page"))
         flash("관리자 아이디 또는 비밀번호가 올바르지 않습니다.", "error")
-    return render_template("login.html", mode="admin")
+    return render_template("login.html")
 
 
 @bp.post("/admin/logout")

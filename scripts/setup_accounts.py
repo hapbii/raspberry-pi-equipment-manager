@@ -20,7 +20,7 @@ print(f"개발자 아이디: {accounts['DEVELOPER_USERNAME']}")
 print(f"개발자 비밀번호: {accounts['DEVELOPER_PASSWORD']}")
 print(f"선생님 아이디: {accounts['TEACHER_USERNAME']}")
 print(f"선생님 비밀번호: {accounts['TEACHER_PASSWORD']}")
-print(f"스테이션 PIN 보호: {accounts['STATION_AUTH_REQUIRED']}")
+print(f"최종 처리 PIN 확인: {accounts['STATION_AUTH_REQUIRED']}")
 if added:
     print(f".env에 추가한 항목: {', '.join(added)}")
     print("서버를 다시 시작해야 새 계정이 적용됩니다.")

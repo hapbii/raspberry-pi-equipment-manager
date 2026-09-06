@@ -6,16 +6,13 @@
   {% if is_developer %}
   <span class="role-badge developer">개발자 권한으로 접속</span>
   {% elif station_auth_required %}
-  <form method="post" action="{{ url_for('web.station_logout') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="button ghost" type="submit">스테이션 로그아웃</button>
-  </form>
+  <span class="access-badge">최종 처리 시 PIN 확인</span>
   {% else %}
   <span class="access-badge">PIN 없이 사용 중</span>
   {% endif %}
 </section>
 
-<div class="scan-layout" id="scan-app" data-mode="{{ detector_mode }}">
+<div class="scan-layout" id="scan-app" data-mode="{{ detector_mode }}" data-pin-required="{{ 'true' if station_auth_required and not is_developer else 'false' }}">
   <section class="panel scan-form-panel">
     <div class="step-label"><span>1</span> 거래 정보</div>
     <label for="student-id">학번</label>
@@ -55,4 +52,20 @@
     <div id="scan-message" class="inline-message hidden" role="status" aria-live="polite"></div>
   </section>
 </div>
+
+<dialog class="pin-dialog" id="station-pin-dialog" aria-labelledby="station-pin-title">
+  <form class="pin-dialog-card" id="station-pin-form">
+    <div class="pin-dialog-icon" aria-hidden="true">PIN</div>
+    <p class="eyebrow">FINAL CONFIRMATION</p>
+    <h2 id="station-pin-title">최종 처리 PIN 확인</h2>
+    <p>대여·반납을 저장하려면 스테이션 PIN을 입력하세요.</p>
+    <label for="transaction-station-pin">스테이션 PIN</label>
+    <input id="transaction-station-pin" type="password" maxlength="128" inputmode="numeric" autocomplete="off" placeholder="PIN 입력">
+    <div id="station-pin-error" class="pin-dialog-error hidden" role="alert"></div>
+    <div class="pin-dialog-actions">
+      <button class="button ghost" id="station-pin-cancel" type="button">취소</button>
+      <button class="button primary" id="station-pin-confirm" type="submit">확인 후 처리</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
