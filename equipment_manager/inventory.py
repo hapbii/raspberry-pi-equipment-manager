@@ -520,7 +520,7 @@ def delete_transaction_record(transaction_id: str) -> None:
         if not transaction:
             raise InventoryError("거래 기록을 찾을 수 없습니다.")
         if not transaction["reversed_at"]:
-            raise InventoryError("재고 보호를 위해 거래를 먼저 취소한 뒤 삭제해 주세요.")
+            raise InventoryError("기자재 수량 보호를 위해 거래를 먼저 취소한 뒤 삭제해 주세요.")
         db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
         db.commit()
     except Exception:

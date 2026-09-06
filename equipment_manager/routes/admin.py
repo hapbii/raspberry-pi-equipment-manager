@@ -122,7 +122,7 @@ def admin_reverse_transaction(transaction_id: str):
     try:
         actor = f"{session.get('admin_role', 'admin')}:{session.get('admin_username', '')}"
         reverse_transaction(transaction_id, reversed_by=actor[:80])
-        flash("거래를 취소하고 재고를 복구했습니다.", "success")
+        flash("거래를 취소하고 기자재 수량을 복구했습니다.", "success")
     except InventoryError as exc:
         flash(str(exc), "error")
     return redirect(url_for("web.admin_page"))
