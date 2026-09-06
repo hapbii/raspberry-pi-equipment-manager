@@ -1,5 +1,9 @@
 (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  const pendingRequests = new Set();
+  window.addEventListener("pagehide", () => {
+    pendingRequests.forEach((controller) => controller.abort());
+  });
 
   function formatDate(value) {
     if (!value) return "기록 없음";
@@ -12,19 +16,37 @@
   }
 
   async function postJson(url, body) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({ ok: false, error: "서버 응답을 읽을 수 없습니다." }));
-    if (!response.ok || !data.ok) {
-      const error = new Error(data.error || "요청 처리에 실패했습니다.");
-      error.code = data.code || "request_failed";
-      error.status = response.status;
+    const controller = new AbortController();
+    pendingRequests.add(controller);
+    const timeout = window.setTimeout(() => controller.abort(), 120000);
+    try {
+      const pending = fetch(url, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify(body),
+      });
+      body = null;
+      const response = await pending;
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        const error = new Error(data.error || "요청 처리에 실패했습니다.");
+        error.code = data.code || "request_failed";
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      if (url === "/api/transactions" && !error.code) {
+        throw new Error("저장 응답을 확인하지 못했습니다. 거래 기록을 확인한 후 다시 시도해 주세요.");
+      }
+      if (error.name === "AbortError") {
+        throw new Error("인식 응답을 기다리는 시간이 초과되었거나 요청이 중단되었습니다.");
+      }
       throw error;
+    } finally {
+      window.clearTimeout(timeout);
+      pendingRequests.delete(controller);
     }
-    return data;
   }
 
   const inventoryGrid = document.querySelector("#inventory-grid");
@@ -82,7 +104,14 @@
       dashboardStopped = true;
       if (dashboardTimer !== null) window.clearTimeout(dashboardTimer);
       if (dashboardController !== null) dashboardController.abort();
-    }, { once: true });
+    });
+
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) {
+        dashboardStopped = false;
+        if (dashboardController === null) refreshDashboard();
+      }
+    });
 
     refreshDashboard();
   }
@@ -109,6 +138,18 @@
     let scanToken = null;
     let scanDueDate = null;
     let scanLoanPeriodDays = null;
+    let saving = false;
+
+    function setSaving(value) {
+      saving = value;
+      [confirmButton, detectButton, retryButton, studentInput, quantityInput,
+        ...actionInputs, pinInput, pinConfirmButton, pinCancelButton].forEach((element) => {
+        if (element) element.disabled = value;
+      });
+      confirmButton.toggleAttribute("aria-busy", value);
+      confirmButton.textContent = value ? "저장 중..." : "이 결과로 처리";
+      pinConfirmButton.textContent = value ? "확인 중..." : "확인 후 처리";
+    }
 
     function selectedAction() {
       return document.querySelector('input[name="action"]:checked')?.value;
@@ -178,6 +219,7 @@
     });
 
     async function submitTransaction(stationPin = "") {
+      if (saving) return;
       const studentId = studentInput.value.trim();
       const quantity = Number(quantityInput.value);
       const action = selectedAction();
@@ -187,22 +229,18 @@
         if (pinDialog?.open) pinDialog.close();
         return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
       }
-      confirmButton.disabled = true;
-      confirmButton.setAttribute("aria-busy", "true");
-      confirmButton.textContent = "저장 중...";
-      if (pinConfirmButton) {
-        pinConfirmButton.disabled = true;
-        pinConfirmButton.textContent = "확인 중...";
-      }
-      if (pinCancelButton) pinCancelButton.disabled = true;
+      setSaving(true);
+      pinInput.value = "";
       try {
-        const data = await postJson("/api/transactions", {
+        const pending = postJson("/api/transactions", {
           scan_token: scanToken,
           student_id: studentId,
           action,
           quantity,
           station_pin: stationPin,
         });
+        stationPin = "";
+        const data = await pending;
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
         const dueText = tx.due_date ? ` · 반납 예정 ${tx.due_date}` : "";
@@ -218,24 +256,18 @@
           pinError.textContent = error.message;
           pinError.classList.remove("hidden");
           pinInput.value = "";
-          pinInput.focus();
         } else {
           if (pinDialog?.open) pinDialog.close();
           showMessage(error.message);
         }
       } finally {
-        confirmButton.disabled = false;
-        confirmButton.removeAttribute("aria-busy");
-        confirmButton.textContent = "이 결과로 처리";
-        if (pinConfirmButton) {
-          pinConfirmButton.disabled = false;
-          pinConfirmButton.textContent = "확인 후 처리";
-        }
-        if (pinCancelButton) pinCancelButton.disabled = false;
+        setSaving(false);
+        if (pinDialog.open) pinInput.focus();
       }
     }
 
     confirmButton.addEventListener("click", () => {
+      if (saving) return;
       if (!studentInput.value.trim()) return showMessage("학번을 입력해 주세요.");
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       if (!pinRequired) {
@@ -246,11 +278,12 @@
       pinError.classList.add("hidden");
       pinError.textContent = "";
       if (!pinDialog.open) pinDialog.showModal();
-      window.setTimeout(() => pinInput.focus(), 0);
+      pinInput.focus();
     });
 
     pinForm?.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (saving) return;
       const stationPin = pinInput.value.trim();
       if (!stationPin) {
         pinError.textContent = "스테이션 PIN을 입력해 주세요.";

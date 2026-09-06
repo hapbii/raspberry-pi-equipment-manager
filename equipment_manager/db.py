@@ -16,11 +16,15 @@ def get_db() -> sqlite3.Connection:
         database_path = Path(current_app.config["DATABASE"])
         database_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(database_path, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 5000")
-        connection.execute("PRAGMA synchronous = NORMAL")
-        connection.execute("PRAGMA wal_autocheckpoint = 1000")
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("PRAGMA busy_timeout = 5000")
+            connection.execute("PRAGMA synchronous = NORMAL")
+            connection.execute("PRAGMA wal_autocheckpoint = 1000")
+        except BaseException:
+            connection.close()
+            raise
         g.db = connection
     return g.db
 

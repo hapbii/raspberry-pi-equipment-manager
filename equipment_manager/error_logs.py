@@ -1,8 +1,53 @@
 from __future__ import annotations
 
 import logging
+from copy import copy
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+
+class BoundedErrorHandler(RotatingFileHandler):
+    """Limit even a single oversized exception and never reopen after close."""
+
+    record_limit = 16 * 1024
+
+    def shouldRollover(self, record: logging.LogRecord) -> bool:
+        if self.stream is None:
+            self.stream = self._open()
+        self.stream.seek(0, 2)
+        size = self.stream.tell()
+        # Korean text is multibyte; character counts do not bound disk usage.
+        # Reserve two bytes per newline for Windows text-mode translation.
+        text = self.format(record) + self.terminator
+        write_size = len(text.encode("utf-8", errors="replace")) + text.count("\n")
+        return size > 0 and size + write_size >= self.maxBytes
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # Handler.handle holds the same lock used by clear/close.
+        if self._closed:
+            return
+        try:
+            text = self.format(record)
+            encoded = text.encode("utf-8", errors="replace")
+            if len(encoded) > self.record_limit:
+                suffix = b"\n[log entry truncated]"
+                text = encoded[: self.record_limit - len(suffix)].decode(
+                    "utf-8", errors="ignore"
+                ) + suffix.decode("ascii")
+            bounded = copy(record)
+            bounded.msg, bounded.args = text, ()
+            bounded._bounded_error_text = True
+            bounded.exc_info = bounded.exc_text = bounded.stack_info = None
+            # Parent rollover and write now format the already bounded string.
+            super().emit(bounded)
+        except Exception:
+            self.handleError(record)
+
+    def format(self, record: logging.LogRecord) -> str:
+        # The timestamp is rendered by the formatter only for the original record.
+        if getattr(record, "_bounded_error_text", False):
+            return str(record.msg)
+        return super().format(record)
 
 
 class ErrorLogStore:
@@ -18,10 +63,10 @@ class ErrorLogStore:
     ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.backup_count = max(1, backup_count)
-        self.display_bytes = max(1024, display_bytes)
+        self.backup_count = min(5, max(1, backup_count))
+        self.display_bytes = min(256 * 1024, max(1024, display_bytes))
         self._logger = logging.getLogger("equipment_manager")
-        self._handler = RotatingFileHandler(
+        self._handler = BoundedErrorHandler(
             self.path,
             maxBytes=max(64 * 1024, max_bytes),
             backupCount=self.backup_count,
@@ -71,14 +116,21 @@ class ErrorLogStore:
             self._handler.release()
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._logger.removeHandler(self._handler)
-        self._handler.close()
+        self._handler.acquire()
+        try:
+            if self._closed:
+                return
+            self._closed = True
+            self._logger.removeHandler(self._handler)
+            self._handler.close()
+        finally:
+            self._handler.release()
 
     def _log_paths(self) -> list[Path]:
-        return [self.path, *[Path(f"{self.path}.{index}") for index in range(1, self.backup_count + 1)]]
+        return [self.path] + [
+            Path(f"{self.path}.{index}")
+            for index in range(1, self.backup_count + 1)
+        ]
 
     def _read_recent_text(self, existing: list[Path]) -> tuple[str, bool]:
         if not existing:

@@ -27,6 +27,23 @@ class FakeCapture:
 
 
 class OpenCvFrameSourceTestCase(unittest.TestCase):
+    def test_configuration_and_warmup_failures_release_camera(self):
+        for operation in ("set", "grab"):
+            with self.subTest(operation=operation):
+                capture = FakeCapture()
+                cv2 = types.SimpleNamespace(
+                    CAP_PROP_FRAME_WIDTH=3, CAP_PROP_FRAME_HEIGHT=4,
+                    CAP_PROP_BUFFERSIZE=38, VideoCapture=lambda _index: capture,
+                )
+                source = OpenCvFrameSource(index=0, width=640, height=480)
+                with patch.dict(sys.modules, {"cv2": cv2}), patch.object(
+                    capture, operation, side_effect=RuntimeError("camera disconnected")
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "camera disconnected"):
+                        source._ensure_started()
+                self.assertTrue(capture.released)
+                self.assertIsNone(source._camera)
+
     def test_stale_camera_is_released_before_reconnect(self):
         replacement = FakeCapture()
         cv2 = types.ModuleType("cv2")

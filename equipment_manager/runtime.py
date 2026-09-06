@@ -33,6 +33,14 @@ class HeartbeatService:
             self._app = None
 
     def _run(self) -> None:
+        try:
+            self._run_loop()
+        finally:
+            # stop() can time out while SQLite is busy. Release the application
+            # when that last operation eventually finishes as well.
+            self._app = None
+
+    def _run_loop(self) -> None:
         while not self._stop_event.wait(self.interval):
             try:
                 app = self._app

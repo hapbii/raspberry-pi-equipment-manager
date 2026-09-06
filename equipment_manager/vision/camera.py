@@ -136,18 +136,21 @@ class OpenCvFrameSource:
             raise DetectionError("OpenCV가 설치되어 있지 않습니다.") from exc
 
         camera = cv2.VideoCapture(self.index)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if not camera.isOpened():
+        try:
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            if not camera.isOpened():
+                raise DetectionError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
+            for _ in range(self.warmup_frames):
+                camera.grab()
+        except BaseException:
             try:
                 camera.release()
             except Exception:
-                logger.debug("Unopened OpenCV camera release failed", exc_info=True)
-            raise DetectionError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
+                logger.debug("OpenCV startup cleanup failed", exc_info=True)
+            raise
         self._camera = camera
-        for _ in range(self.warmup_frames):
-            camera.grab()
         logger.info("OpenCV camera started: index=%s, %sx%s", self.index, self.width, self.height)
 
     def frames(self, count: int) -> Iterator[object]:
