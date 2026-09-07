@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-function setup() {
+function setup(pinRequired = true) {
   const elements = new Map();
   const timers = new Map();
   const pageEvents = new Map();
@@ -15,7 +15,7 @@ function setup() {
       const classes = new Set();
       elements.set(id, {
         value: '', disabled: false, open: false,
-        dataset: { pinRequired: 'true' }, events: new Map(),
+        dataset: { pinRequired: String(pinRequired) }, events: new Map(),
         classList: {
           add: (...names) => names.forEach((name) => classes.add(name)),
           remove: (...names) => names.forEach((name) => classes.delete(name)),
@@ -65,6 +65,28 @@ function setup() {
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('developer final confirmation skips the PIN dialog and submits only once', async () => {
+  const ui = setup(false);
+  ui.element('#student-id').value = '30304';
+  ui.element('#quantity').value = '1';
+  ui.element('#mock-equipment').value = '1';
+  const detecting = ui.fire('#detect-button', 'click');
+  ui.answer(ui.requests[0], { ok: true, scan: { token: 'scan-developer', confidence: 0.99,
+    equipment_name: 'meter', due_date: '2026-09-10', loan_period_days: 7 },
+    votes: 5, frame_count: 5, duration_ms: 10 });
+  await detecting;
+  ui.fire('#confirm-button', 'click');
+  ui.fire('#confirm-button', 'click');
+  assert.equal(ui.element('#station-pin-dialog').open, false);
+  assert.equal(ui.requests.length, 2);
+  assert.equal(ui.requests[1].url, '/api/transactions');
+  assert.ok(!ui.requests[1].body.station_pin);
+  ui.answer(ui.requests[1], { ok: true, transaction: { action: 'loan',
+    equipment_name: 'meter', quantity: 1, available_qty: 2 } });
+  await settle();
+  assert.equal(ui.timers.size, 0);
+});
 
 test('PIN retries send one transaction at a time and release request timers', async () => {
   const ui = setup();

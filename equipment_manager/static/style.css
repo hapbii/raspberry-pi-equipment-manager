@@ -66,8 +66,6 @@ nav { min-width: 0; display: flex; gap: 6px; }
 .nav-link:hover { background: rgba(255,255,255,.1); color: white; transform: translateY(-1px); }
 .nav-link.active { color: var(--navy); border-color: rgba(255,255,255,.55); background: white; box-shadow: 0 7px 18px rgba(0,0,0,.16); }
 
-.security-warning { padding: 8px 20px; text-align: center; color: #7a3600; background: #fff0d9; font-size: .86rem; }
-.security-warning code { font-weight: 800; }
 .page-shell { width: min(1180px, calc(100% - 36px)); min-height: calc(100vh - 164px); margin: 0 auto; padding: 46px 0 76px; }
 .site-footer {
   display: flex; justify-content: space-between; gap: 20px;

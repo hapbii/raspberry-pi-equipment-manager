@@ -19,7 +19,6 @@ def ensure_csrf_token():
 def inject_template_context():
     station_auth_required = current_app.config["STATION_AUTH_REQUIRED"]
     admin_role = session.get("admin_role")
-    teacher_password = current_app.config["TEACHER_PASSWORD"]
     return {
         "csrf_token": session.get("csrf_token", ""),
         "detector_mode": current_app.config["DETECTOR_MODE"],
@@ -31,13 +30,6 @@ def inject_template_context():
             "teacher": "선생님 관리자",
             "developer": "개발자 관리자",
         }.get(admin_role, ""),
-        "using_default_secrets": current_app.config["DEVELOPER_PASSWORD"]
-        in {"admin1234", "developer1234"}
-        or teacher_password == "teacher1234"
-        or (
-            station_auth_required
-            and current_app.config["STATION_PIN"] == "1234"
-        ),
     }
 
 

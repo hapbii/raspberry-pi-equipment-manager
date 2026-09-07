@@ -147,6 +147,33 @@ class EquipmentManagerTestCase(unittest.TestCase):
         response = self.transact(token, station_pin=None)
         self.assertEqual(response.status_code, 200, response.get_json())
 
+    def test_public_pages_do_not_display_default_password_banner(self):
+        self.app.config.update(
+            DEVELOPER_PASSWORD="developer1234", TEACHER_PASSWORD="teacher1234",
+            STATION_PIN="1234",
+        )
+        for path in ("/", "/scan", "/admin/login"):
+            with self.subTest(path=path):
+                page = self.client.get(path)
+                self.assertEqual(page.status_code, 200)
+                html = page.get_data(as_text=True)
+                self.assertNotIn("개발용 기본 계정 비밀번호", html)
+                self.assertNotIn("security-warning", html)
+
+    def test_teacher_still_requires_pin_for_loan_and_return(self):
+        self.login_admin()
+        self.assertIn('data-pin-required="true"', self.client.get("/scan").get_data(as_text=True))
+        for action in ("loan", "return"):
+            with self.subTest(action=action):
+                equipment = self.first_equipment()
+                token = self.scan(equipment["id"])
+                for pin in (None, "wrong"):
+                    rejected = self.transact(token, action=action, station_pin=pin)
+                    self.assertEqual(rejected.status_code, 403)
+                    self.assertEqual(self.first_equipment()["available_qty"], equipment["available_qty"])
+                accepted = self.transact(token, action=action)
+                self.assertEqual(accepted.status_code, 200, accepted.get_json())
+
     def test_admin_requires_matching_username_and_password(self):
         rejected = self.client.post(
             "/admin/login",
@@ -198,6 +225,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertNotIn("test-developer", developer_html)
         self.assertNotIn("test-teacher", developer_html)
         self.assertEqual(self.client.get("/admin").status_code, 200)
+        self.assertEqual(self.client.get("/").status_code, 200)
+        scan_page = self.client.get("/scan")
+        self.assertEqual(scan_page.status_code, 200)
+        self.assertIn('data-pin-required="false"', scan_page.get_data(as_text=True))
 
         # Developer access bypasses the final station PIN confirmation.
         scan = self.client.post("/api/scans", json={"mock_equipment_id": 1})
@@ -207,11 +238,14 @@ class EquipmentManagerTestCase(unittest.TestCase):
             station_pin=None,
         )
         self.assertEqual(transaction.status_code, 200, transaction.get_json())
+        returned = self.transact(self.scan(1), action="return", station_pin=None)
+        self.assertEqual(returned.status_code, 200, returned.get_json())
 
         self.client.post("/admin/logout")
         after_logout = self.client.get("/developer")
         self.assertEqual(after_logout.status_code, 302)
         self.assertTrue(after_logout.location.endswith("/admin/login"))
+        self.assertIn('data-pin-required="true"', self.client.get("/scan").get_data(as_text=True))
 
     def test_only_developer_can_view_and_clear_error_logs(self):
         marker = "camera-test-error-4821"

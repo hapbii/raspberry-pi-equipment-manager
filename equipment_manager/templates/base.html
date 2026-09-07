@@ -27,10 +27,6 @@
     </div>
   </header>
 
-  {% if using_default_secrets %}
-    <div class="security-warning">개발용 기본 계정 비밀번호를 사용 중입니다. 학교 배포 전 <code>.env</code>에서 변경하세요.</div>
-  {% endif %}
-
   <main id="main-content" class="page-shell">
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <div class="flash flash-{{ category }}">{{ message }}</div>
