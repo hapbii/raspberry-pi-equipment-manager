@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import secrets
-
 from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 
 from ..db import set_device_status
@@ -15,6 +13,7 @@ from ..inventory import (
     get_equipment,
     list_inventory,
 )
+from ..security import constant_time_equal
 from ..vision import DetectionError, get_detection_service
 from . import bp
 
@@ -103,7 +102,7 @@ def api_create_transaction():
     )
     if pin_required:
         supplied_pin = str(data.get("station_pin") or "")[:128]
-        if not secrets.compare_digest(supplied_pin, current_app.config["STATION_PIN"]):
+        if not constant_time_equal(supplied_pin, current_app.config["STATION_PIN"]):
             return (
                 jsonify(
                     {

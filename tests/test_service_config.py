@@ -24,6 +24,7 @@ class ServiceConfigTestCase(unittest.TestCase):
         else:
             python.write_text("python placeholder", encoding="utf-8")
         (self.app_dir / "wsgi.py").touch()
+        (self.app_dir / "serve.py").touch()
         self.env = self.app_dir / ".env"
         self.env.write_text("DETECTOR_MODE=mock\nTEACHER_PASSWORD=private-value\n", encoding="utf-8")
 
@@ -39,6 +40,7 @@ class ServiceConfigTestCase(unittest.TestCase):
         self.assertIn("User=pi30304", unit)
         self.assertIn("kit %%i $HOME", unit)
         self.assertIn('ExecStart=:"', unit)
+        self.assertIn('serve.py" --allow-mock', unit)
         self.assertNotIn("private-value", unit)
         self.assertNotIn("EnvironmentFile=", unit)
         self.assertNotIn("git pull", unit)
@@ -50,7 +52,9 @@ class ServiceConfigTestCase(unittest.TestCase):
         model = self.app_dir / "models/my model.pt"
         model.parent.mkdir()
         model.touch()
-        self.assertIn("ExecStart=", self.render())
+        unit = self.render(allow_mock=True)
+        self.assertIn("ExecStart=", unit)
+        self.assertNotIn("--allow-mock", unit)
 
     def test_ncnn_directory_is_accepted(self):
         self.env.write_text("DETECTOR_MODE=yolo\nYOLO_MODEL_PATH=models/best_ncnn_model\n", encoding="utf-8")

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import io
-import secrets
 
 from flask import current_app, flash, redirect, render_template, request, session, url_for
 
@@ -17,6 +16,7 @@ from ..inventory import (
     reverse_transaction,
     update_equipment,
 )
+from ..security import constant_time_equal
 from . import bp
 from .common import admin_required, developer_required
 
@@ -26,10 +26,10 @@ def admin_login():
     if request.method == "POST":
         supplied_username = request.form.get("username", "").strip()
         supplied = request.form.get("password", "")
-        developer_valid = secrets.compare_digest(
+        developer_valid = constant_time_equal(
             supplied_username,
             current_app.config["DEVELOPER_USERNAME"],
-        ) and secrets.compare_digest(
+        ) and constant_time_equal(
             supplied, current_app.config["DEVELOPER_PASSWORD"]
         )
         teacher_username = current_app.config["TEACHER_USERNAME"]
@@ -37,8 +37,8 @@ def admin_login():
         teacher_valid = bool(
             teacher_username
             and teacher_password
-            and secrets.compare_digest(supplied_username, teacher_username)
-            and secrets.compare_digest(supplied, teacher_password)
+            and constant_time_equal(supplied_username, teacher_username)
+            and constant_time_equal(supplied, teacher_password)
         )
         role = "developer" if developer_valid else "teacher" if teacher_valid else None
         if role:

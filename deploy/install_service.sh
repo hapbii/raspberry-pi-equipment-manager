@@ -24,7 +24,7 @@ if [[ ! -d /run/systemd/system ]]; then
   echo "systemd로 부팅한 Raspberry Pi/Linux에서 실행하세요." >&2
   exit 1
 fi
-for dependency in runuser systemctl systemd-analyze; do
+for dependency in runuser systemctl systemd-analyze curl; do
   command -v "$dependency" >/dev/null || { echo "$dependency 명령이 필요합니다." >&2; exit 1; }
 done
 
@@ -48,6 +48,8 @@ runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
   "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
   --user "$APP_USER" --group "$APP_GROUP" "${ALLOW_MOCK[@]}" > "$STAGING_DIR/$UNIT"
 systemd-analyze verify "$STAGING_DIR/$UNIT"
+runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
+  "$APP_DIR/serve.py" --check "${ALLOW_MOCK[@]}"
 echo "실행 계정: $APP_USER ($APP_GROUP)"
 echo "프로젝트: $APP_DIR"
 echo "설정 파일: $APP_DIR/.env"
@@ -73,6 +75,13 @@ fi
 sleep 2
 if ! systemctl is-active --quiet "$UNIT"; then
   echo "서비스가 정상 실행되지 않았습니다. 수동 서버가 8080 포트를 사용 중인지도 확인하세요." >&2
+  journalctl -u "$UNIT" -n 30 --no-pager >&2
+  exit 1
+fi
+if ! curl --noproxy '*' --fail --silent --show-error --max-time 3 \
+  --retry 8 --retry-connrefused --retry-delay 1 --retry-max-time 30 \
+  http://127.0.0.1:8080/healthz >/dev/null || ! systemctl is-active --quiet "$UNIT"; then
+  echo "웹·DB 응답 확인 실패. 설치 완료로 처리하지 않습니다. 아래 로그를 확인하세요." >&2
   journalctl -u "$UNIT" -n 30 --no-pager >&2
   exit 1
 fi

@@ -28,6 +28,8 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
         raise ValueError(".venv/bin/python이 없습니다. 프로젝트의 가상환경을 먼저 준비하세요.")
     if not (app_dir / "wsgi.py").is_file():
         raise ValueError("프로젝트에서 wsgi.py를 찾을 수 없습니다.")
+    if not (app_dir / "serve.py").is_file():
+        raise ValueError("프로젝트에서 serve.py를 찾을 수 없습니다. 최신 코드를 받아 주세요.")
     mode = (values.get("DETECTOR_MODE", "mock") or "").lower()
     if mode == "mock":
         if not allow_mock:
@@ -47,8 +49,10 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
         "__GROUP__": group,
         "__APP_DIR__": app_dir.as_posix().replace("%", "%%"),
         "__PYTHON__": '"' + python.as_posix().replace("%", "%%") + '"',
+        "__SERVER__": '"' + (app_dir / "serve.py").as_posix().replace("%", "%%") + '"',
+        "__MODE_ARGS__": "--allow-mock" if mode == "mock" and allow_mock else "",
     }
-    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON)__", lambda match: replacements[match[0]], template)
+    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON|SERVER|MODE_ARGS)__", lambda match: replacements[match[0]], template)
 
 
 def main() -> int:

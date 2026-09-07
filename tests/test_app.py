@@ -167,6 +167,23 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.location.endswith("/admin"))
 
+    def test_unicode_credentials_and_invalid_unicode_tokens_do_not_raise(self):
+        self.app.config.update(TEACHER_USERNAME="선생님", TEACHER_PASSWORD="직접설정한비밀번호123!")
+        rejected = self.client.post("/admin/login", data={"username": "다른사람", "password": "틀린값"})
+        self.assertEqual(rejected.status_code, 200)
+        accepted = self.client.post("/admin/login", data={"username": "선생님", "password": "직접설정한비밀번호123!"})
+        self.assertEqual(accepted.status_code, 302)
+        with self.client.session_transaction() as current_session:
+            self.assertEqual(current_session.get("admin_role"), "teacher")
+        invalid_pin = self.client.post("/api/transactions", json={"station_pin": "잘못된PIN"})
+        self.assertEqual(invalid_pin.status_code, 403)
+        malformed_pin = self.client.post("/api/transactions", json={"station_pin": "\ud800"})
+        self.assertEqual(malformed_pin.status_code, 403)
+        self.app.config["CSRF_ENABLED"] = True
+        invalid_csrf = self.client.post("/admin/login", data={"csrf_token": "한글토큰"})
+        self.assertEqual(invalid_csrf.status_code, 302)
+        self.assertEqual(self.client.get("/healthz").status_code, 200)
+
     def test_anonymous_user_is_sent_to_login_from_developer_page(self):
         response = self.client.get("/developer")
         self.assertEqual(response.status_code, 302)

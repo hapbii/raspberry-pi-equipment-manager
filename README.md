@@ -360,6 +360,8 @@ source .venv/bin/activate
 
 # 4부. 설정 파일 만들기
 
+**이미 직접 만든 `.env`가 있다면 생성 명령을 건너뛰세요.** 코드 업데이트나 서비스 설치는 기존 `.env`의 아이디·비밀번호를 덮어쓰지 않습니다. `.env.example`은 새 설정을 만들 때 참고하는 양식이며 로그인 시 읽는 파일이 아닙니다.
+
 프로젝트 폴더와 가상환경이 활성화된 상태에서 실행합니다.
 
 > **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
@@ -681,14 +683,53 @@ python scripts/memory_soak_test.py --scans 200 --interval 0.5 --max-growth-mb 12
 
 # 10부. 웹사이트 실제 실행하기
 
-진단과 메모리 검사를 통과한 뒤 실행합니다.
+진단과 메모리 검사를 통과한 뒤 **배포용 진입점 `serve.py`**로 실행합니다. 이 명령은 Flask 개발 서버가 아닌 Waitress 서버를 실행하고, DEBUG와 TESTING을 끕니다. `tests/`는 개발 검증용으로 남아 있지만 운영 서버에서 실행되지 않습니다.
+
+직접 설정한 `.env`가 다음 기준을 만족하는지 먼저 확인하세요. 조건에 맞지 않으면 **값을 자동 변경하지 않고 항목명만 안내한 뒤 시작을 중단**합니다. `--allow-mock`을 사용하더라도 보안 검사는 동일하게 적용됩니다.
+
+- `SECRET_KEY`: 예제 값이 아닌 무작위 32자 이상 문자열. 로그인 비밀번호와는 별개인 세션 서명 키입니다.
+- `DEVELOPER_USERNAME`, `TEACHER_USERNAME`: 서로 다른 아이디, 앞뒤 공백 없음.
+- `DEVELOPER_PASSWORD`, `TEACHER_PASSWORD`: 예제 값이 아닌 각각 12자 이상 비밀번호. 한글도 사용할 수 있습니다.
+- `STATION_AUTH_REQUIRED=true`, `STATION_PIN`: 같은 숫자만 반복하지 않는 6~12자리 숫자.
+- `CSRF_ENABLED`는 생략하거나 `true`. 요청 위조 방지 기능을 끄지 않습니다.
+- 실제 운영은 `DETECTOR_MODE=yolo`와 읽을 수 있는 `YOLO_MODEL_PATH`가 필요합니다.
+
+기존 파일을 수정해야 한다면 필요한 항목만 바꾸고 저장하세요. 비밀번호에 `#`나 공백이 들어가면 따옴표로 감싸고, `${...}` 형태는 환경변수 치환 문법이므로 피하세요. 설정 파일을 셸에서 `source .env`로 실행하지 않습니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
+```bash
+nano .env
+```
+
+`Ctrl+O`, `Enter`로 저장하고 `Ctrl+X`로 나옵니다. 이미 조건에 맞게 설정했다면 수정할 필요가 없습니다. 새 SECRET_KEY가 필요할 때만 다음 명령으로 값을 생성해 해당 항목에 직접 붙여 넣으세요. 이 명령은 `.env` 파일을 변경하지 않습니다.
+
+> **실행 위치: Raspberry Pi 터미널(선택 사항)**
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+설정만 먼저 검사합니다. 이 과정에서는 DB·카메라를 열지 않습니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
+```bash
+.venv/bin/python serve.py --check
+```
+
+모델이 아직 없어 웹 확인만 한다면 위 명령 끝에 `--allow-mock`을 붙입니다. **배포용 웹 서버로 실행하는 것과 실제 카메라 인식을 완료하는 것은 별개**입니다. mock 모드로 정식 기자재 인식 운영을 시작하지 마세요.
+
+검사를 통과한 뒤 수동으로 실행하려면 다음 명령을 사용합니다. 이미 systemd 서비스가 실행 중이면 수동 서버를 추가로 켜지 말고 11부를 따르세요.
 
 > **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 가상환경 활성화 후)**
 
 ```bash
 MALLOC_ARENA_MAX=2 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 \
-python -m waitress --listen=0.0.0.0:8080 --threads=2 wsgi:app
+python serve.py
 ```
+
+웹 확인용 수동 실행은 마지막 줄을 `python serve.py --allow-mock`으로 바꾸면 됩니다.
 
 정상 메시지:
 
@@ -715,13 +756,15 @@ http://<PI_IP>:8080
 - `관리자`: 선생님 또는 개발자 계정으로 로그인해 종류·수량·기록 관리
 - `시스템`: 개발자 계정으로 로그인했을 때만 보이는 서버·DB·모델·오류 로그 진단
 
-2GB Pi에서는 서버 프로세스를 여러 개 실행하지 않습니다. 현재 설정은 서버 프로세스 1개, 웹 스레드 2개, 동시 YOLO 추론 1개를 사용합니다.
+2GB Pi에서는 서버 프로세스를 여러 개 실행하지 않습니다. 배포 설정은 서버 프로세스 1개, 웹 스레드 2개, 동시 YOLO 추론 1개를 사용합니다. Waitress 연결은 32개, 요청 본문은 1MB, 요청 헤더는 16KB로 제한하고 버퍼 임계값도 낮췄습니다. 이는 웹 연결의 자원 사용을 줄이는 설정이지 전체 메모리 사용량이나 누수 방지를 보장하는 수치는 아닙니다. 설정 근거는 [Waitress 공식 문서](https://docs.pylonsproject.org/projects/waitress/en/stable/arguments.html)를 참고하세요.
+
+현재 `http://IP:8080` 접속을 유지하려면 `SESSION_COOKIE_SECURE=false`여야 합니다. HTTPS를 구성하기 전에 이 값만 true로 바꾸면 로그인 세션이 유지되지 않습니다. HTTP에서는 비밀번호·PIN 통신이 암호화되지 않으므로 승인된 신뢰 가능한 교내망에서만 사용하고, 공개 인터넷 배포는 HTTPS 또는 학교 승인 VPN 구성을 별도로 완료해야 합니다.
 
 ---
 
 # 11부. 전원을 켜면 자동 실행되게 만들기
 
-이 작업은 **Windows PC가 아니라 라즈베리파이 터미널**에서 합니다. 앞부분에서 가상환경(`.venv`)과 설정 파일(`.env`)을 준비하고, 수동으로 웹사이트가 열리는 것까지 확인한 상태를 기준으로 합니다.
+이 작업은 **Windows PC가 아니라 라즈베리파이 터미널**에서 합니다. 앞부분에서 가상환경(`.venv`)과 설정 파일(`.env`)을 준비하고, 10부의 배포 보안 기준을 확인한 상태를 기준으로 합니다.
 
 ### 1. 최신 코드 받기
 
@@ -760,9 +803,10 @@ sudo bash deploy/install_service.sh
 
 - 현재 로그인한 일반 사용자와 프로젝트의 실제 경로를 서비스에 입력합니다. 사용자명이나 `/home/...` 경로를 직접 수정할 필요가 없습니다.
 - 프로젝트 가상환경의 Python으로 실행합니다. 설치 명령 전에 가상환경을 활성화할 필요는 없습니다.
-- 설정·접근 권한과 서비스 문법을 확인한 뒤 등록하고 즉시 실행합니다.
+- 설정·접근 권한과 서비스 문법, 10부의 배포 보안 기준을 확인한 뒤 등록하고 `serve.py`를 실행합니다. 검사 실패 시 기존 서비스 설정을 교체하지 않습니다.
 - 기존 서비스가 있으면 설정 파일을 백업하고 갱신한 뒤 재시작합니다. 백업 경로는 설치 화면에 표시됩니다.
 - 다음 부팅 때도 자동 실행되도록 설정합니다. **부팅할 때 `git pull`을 자동으로 하지는 않습니다.**
+- 실행 후 `/healthz`로 웹·DB 응답까지 확인합니다. 실패하면 성공으로 표시하지 않고 최근 서버 로그를 출력합니다.
 
 계정·비밀번호·PIN과 DB는 설치기가 변경하지 않습니다. 앞으로 서비스는 **프로젝트 폴더의 `.env`**를 읽습니다. 예전 설치기가 만든 `/etc/equipment-manager.env`가 남아 있어도 새로 설치한 서비스는 그 복사본을 사용하지 않습니다.
 
@@ -1246,7 +1290,7 @@ node --test tests/test_frontend.cjs
 > **실행 위치: Windows PC 또는 Raspberry Pi의 프로젝트 폴더(가상환경 활성화 후)**
 
 ```bash
-python -m compileall -q equipment_manager scripts tests wsgi.py
+python -m compileall -q equipment_manager scripts deploy tests wsgi.py serve.py
 python -m unittest discover -s tests -v
 ```
 
@@ -1266,6 +1310,8 @@ python -m unittest discover -s tests -v
 
 # 최종 배포 전 체크리스트
 
+- [ ] `serve.py --check`의 배포 설정 검사를 통과한다 (실제 운영 검사에는 `--allow-mock` 사용 안 함).
+- [ ] 이전 서버 종료 오류의 원인을 로그로 확인하고 해결했다.
 - [ ] Pi 카메라 시험 사진이 정상이다.
 - [ ] 실제 기자재로 YOLO 모델을 학습했다.
 - [ ] `pi_diagnostics.py`가 통과한다.

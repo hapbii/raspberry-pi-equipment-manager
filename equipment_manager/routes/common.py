@@ -5,6 +5,7 @@ from functools import wraps
 
 from flask import current_app, flash, jsonify, redirect, request, session, url_for
 
+from ..security import constant_time_equal
 from . import bp
 
 
@@ -49,7 +50,7 @@ def csrf_valid() -> bool:
         return True
     supplied = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
     expected = session.get("csrf_token", "")
-    return bool(supplied and expected and secrets.compare_digest(supplied, expected))
+    return bool(supplied and expected and constant_time_equal(supplied, expected))
 
 
 @bp.before_app_request

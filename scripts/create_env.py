@@ -19,6 +19,8 @@ developer_username = "developer"
 teacher_password = secrets.token_urlsafe(12)
 teacher_username = "teacher"
 station_pin = f"{secrets.randbelow(1_000_000):06d}"
+while len(set(station_pin)) == 1:
+    station_pin = f"{secrets.randbelow(1_000_000):06d}"
 secret_key = secrets.token_hex(32)
 
 lines = []
