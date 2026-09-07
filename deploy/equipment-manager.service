@@ -8,13 +8,13 @@ Type=simple
 User=__USER__
 Group=__GROUP__
 WorkingDirectory=__APP_DIR__
-EnvironmentFile=-/etc/equipment-manager.env
+# wsgi.py reads the project's .env with python-dotenv.
 Environment=PYTHONUNBUFFERED=1
 Environment=MALLOC_ARENA_MAX=2
 Environment=OMP_NUM_THREADS=2
 Environment=OPENBLAS_NUM_THREADS=2
 Environment=MKL_NUM_THREADS=2
-ExecStart=__APP_DIR__/.venv/bin/waitress-serve --host=0.0.0.0 --port=8080 --threads=2 wsgi:app
+ExecStart=:__PYTHON__ -m waitress --host=0.0.0.0 --port=8080 --threads=2 wsgi:app
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

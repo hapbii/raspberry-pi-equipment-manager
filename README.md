@@ -721,7 +721,32 @@ http://<PI_IP>:8080
 
 # 11부. 전원을 켜면 자동 실행되게 만들기
 
-수동 웹 실행을 먼저 확인하고 `Ctrl+C`로 종료합니다. 그다음 실행합니다.
+이 작업은 **Windows PC가 아니라 라즈베리파이 터미널**에서 합니다. 앞부분에서 가상환경(`.venv`)과 설정 파일(`.env`)을 준비하고, 수동으로 웹사이트가 열리는 것까지 확인한 상태를 기준으로 합니다.
+
+### 1. 최신 코드 받기
+
+수동으로 서버를 켜 둔 터미널에서는 먼저 `Ctrl+C`로 서버를 종료하세요. 이미 systemd로 실행 중이면 종료하지 않아도 됩니다. 설치기가 다시 시작해 줍니다.
+
+> **실행 위치: Raspberry Pi 터미널 — 아래 두 명령 모두 Pi에서 실행**
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+git pull origin main
+```
+
+다른 폴더에 설치했다면 첫 줄만 실제 프로젝트 폴더로 바꾸세요. 기존 `.env`를 다시 만들거나 덮어쓸 필요는 없습니다.
+
+### 2. 현재 상태에 맞는 설치 명령 하나 실행
+
+**아직 YOLO 모델이 없고 `.env`가 `DETECTOR_MODE=mock`인 경우:** 아래 명령으로 웹 확인용 자동 실행을 설정합니다. 실제 카메라 인식은 하지 않습니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
+
+```bash
+sudo bash deploy/install_service.sh --allow-mock
+```
+
+**모델을 준비하고 `.env`를 `DETECTOR_MODE=yolo`로 바꾼 실제 운영 단계:** 아래 명령을 실행합니다. 설정한 모델 파일 또는 NCNN 폴더가 있는지도 확인합니다.
 
 > **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
 
@@ -729,12 +754,32 @@ http://<PI_IP>:8080
 sudo bash deploy/install_service.sh
 ```
 
-설치가 끝나면 상태를 확인합니다.
+두 명령을 연달아 실행하는 것이 아니라 현재 상태에 맞는 **하나만** 선택하세요. `--allow-mock`은 mock 모드 설치를 허용하는 옵션이지, `.env`를 수정하거나 잘못된 YOLO 모델 경로를 무시하는 옵션이 아닙니다.
+
+설치기가 자동으로 처리하는 내용:
+
+- 현재 로그인한 일반 사용자와 프로젝트의 실제 경로를 서비스에 입력합니다. 사용자명이나 `/home/...` 경로를 직접 수정할 필요가 없습니다.
+- 프로젝트 가상환경의 Python으로 실행합니다. 설치 명령 전에 가상환경을 활성화할 필요는 없습니다.
+- 설정·접근 권한과 서비스 문법을 확인한 뒤 등록하고 즉시 실행합니다.
+- 기존 서비스가 있으면 설정 파일을 백업하고 갱신한 뒤 재시작합니다. 백업 경로는 설치 화면에 표시됩니다.
+- 다음 부팅 때도 자동 실행되도록 설정합니다. **부팅할 때 `git pull`을 자동으로 하지는 않습니다.**
+
+계정·비밀번호·PIN과 DB는 설치기가 변경하지 않습니다. 앞으로 서비스는 **프로젝트 폴더의 `.env`**를 읽습니다. 예전 설치기가 만든 `/etc/equipment-manager.env`가 남아 있어도 새로 설치한 서비스는 그 복사본을 사용하지 않습니다.
+
+설치하지 않고 먼저 확인만 하고 싶다면 다음 명령을 사용할 수 있습니다. YOLO 운영 설정이면 `--allow-mock`을 빼면 됩니다.
+
+> **실행 위치: Raspberry Pi 터미널(프로젝트 폴더, 선택 사항)**
+
+```bash
+sudo bash deploy/install_service.sh --allow-mock --check
+```
+
+### 3. 실행 상태 확인
 
 > **실행 위치: Raspberry Pi 터미널**
 
 ```bash
-sudo systemctl status equipment-manager.service
+sudo systemctl status equipment-manager.service --no-pager -l
 ```
 
 아래 문구가 보이면 실행 중입니다.
@@ -743,29 +788,34 @@ sudo systemctl status equipment-manager.service
 Active: active (running)
 ```
 
-설치기는 테스트용 `mock` 모드가 아니라 `DETECTOR_MODE=yolo`인지, 설정한 모델 파일 또는 NCNN 폴더가 실제로 존재하는지 먼저 확인합니다. 조건이 맞지 않으면 자동 서비스를 설치하지 않고 수정할 내용을 화면에 알려줍니다.
-
-상태 화면에서 빠져나오려면 `q`를 누릅니다.
+브라우저에서 기존과 같이 `http://라즈베리파이IP:8080`으로 접속하세요. 실행 상태가 정상이라는 것은 서버 프로세스가 실행 중이라는 뜻이며, 실제 카메라 인식 성공까지 확인한 것은 아닙니다.
 
 웹 서버 로그를 실시간으로 보려면 다음을 실행합니다.
 
 > **실행 위치: Raspberry Pi 터미널**
 
 ```bash
-journalctl -u equipment-manager.service -f
+sudo journalctl -u equipment-manager.service -f
 ```
 
 로그 화면은 `Ctrl+C`로 종료합니다. 서비스를 설치한 뒤에는 SSH 연결을 닫아도 웹사이트가 계속 실행되고, Pi를 재부팅해도 자동으로 시작합니다.
 
-서비스를 다시 시작하거나 멈추는 명령:
+### 4. 설정 변경과 서비스 관리
+
+선생님 아이디·비밀번호나 PIN 등 프로젝트 `.env`를 수정한 뒤에는 **재시작만** 하면 반영됩니다. 아래 명령은 목적에 맞는 것만 실행하세요.
 
 > **실행 위치: Raspberry Pi 터미널**
 
 ```bash
+# .env 수정 또는 코드 업데이트 후 다시 시작
 sudo systemctl restart equipment-manager.service
+# 서버를 잠시 멈추기
 sudo systemctl stop equipment-manager.service
+# 멈춘 서버 다시 켜기
 sudo systemctl start equipment-manager.service
 ```
+
+서비스가 실행 중이면 별도의 수동 서버를 켜지 마세요. 같은 8080 포트를 두 서버가 사용할 수 없습니다. 설치 오류가 나면 출력된 안내를 먼저 확인하고, `200/CHDIR`처럼 예전 사용자명·경로가 남아 있는 오류는 위 설치 명령으로 서비스 설정을 다시 생성하세요.
 
 ---
 
@@ -856,8 +906,9 @@ git pull
 source .venv/bin/activate
 python -m pip install -r requirements-pi.txt
 python -m unittest discover -s tests -v
-sudo bash deploy/install_service.sh
 ```
+
+이어서 11부의 설치 명령을 현재 모드에 맞게 다시 실행하세요. 아직 모델 없이 `mock` 모드라면 `--allow-mock`을 붙이고, YOLO 운영 모드라면 옵션 없이 실행합니다. 서비스 설정 갱신과 서버 재시작까지 처리됩니다.
 
 비공개 저장소 인증을 다시 요구하면 GitHub 사용자명과 Personal Access Token을 입력합니다.
 
@@ -1068,13 +1119,15 @@ sudo systemctl status equipment-manager.service
 journalctl -u equipment-manager.service -n 100 --no-pager
 ```
 
-출력된 마지막 오류부터 확인합니다. `.env`를 수정했다면 다시 설치해 설정을 반영합니다.
+출력된 마지막 오류부터 확인합니다. 11부의 새 설치기로 등록한 서비스는 프로젝트 `.env` 수정 후 재시작만 하면 됩니다.
 
 > **실행 위치: Raspberry Pi 터미널(프로젝트 폴더)**
 
 ```bash
-sudo bash deploy/install_service.sh
+sudo systemctl restart equipment-manager.service
 ```
+
+`200/CHDIR`는 프로젝트 작업 경로에 접근하지 못했다는 뜻입니다. 프로젝트 폴더가 있는지 확인한 뒤 11부의 설치 명령을 다시 실행하세요. 설치기가 현재 사용자와 실제 경로로 설정을 갱신합니다. 모델이 없는 mock 모드에서는 `--allow-mock` 옵션을 붙이세요.
 
 ## 메모리 검사에 실패합니다
 
