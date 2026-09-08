@@ -60,11 +60,13 @@ class Picamera2FrameSource:
             camera.start()
             if self.warmup_seconds:
                 time.sleep(self.warmup_seconds)
-        except Exception as exc:
+        except BaseException as exc:
             try:
                 camera.close()
             except Exception:
                 logger.debug("Camera close after startup failure also failed", exc_info=True)
+            if not isinstance(exc, Exception):
+                raise
             raise DetectionError(f"Picamera2 시작에 실패했습니다: {exc}") from exc
 
         self._camera = camera

@@ -114,7 +114,7 @@ class DeploymentTestCase(unittest.TestCase):
         with patch.object(serve, "ROOT", self.root), patch.dict(os.environ), \
              patch("equipment_manager.config.Config", SimpleNamespace(**self.config)), \
              patch("equipment_manager.create_app", return_value=app) as factory, \
-             patch("waitress.serve", side_effect=OSError("port busy")):
+             patch("equipment_manager.web_server.run_web_server", side_effect=OSError("port busy")):
             with self.assertRaisesRegex(OSError, "port busy"):
                 serve.main(["--allow-mock"])
         factory.assert_called_once_with({"DEBUG": False, "TESTING": False})

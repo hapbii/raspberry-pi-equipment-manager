@@ -77,6 +77,20 @@ class GpioIndicatorTestCase(unittest.TestCase):
         self.assertEqual(len(created), 1)
         self.assertTrue(created[0].closed)
 
+    def test_worker_start_failure_releases_devices(self):
+        with patch("equipment_manager.hardware.threading.Thread.start", side_effect=RuntimeError("no threads")):
+            with self.assertRaisesRegex(RuntimeError, "no threads"):
+                GpioIndicator(17, 27, 22)
+        self.assertEqual(len(FakeDevice.instances), 3)
+        self.assertTrue(all(device.closed for device in FakeDevice.instances))
+
+    def test_off_failure_does_not_skip_device_close(self):
+        indicator = GpioIndicator(17, 27, 22)
+        with patch.object(indicator.green, "off", side_effect=RuntimeError("disconnected")):
+            indicator.close()
+        self.assertTrue(all(device.closed for device in FakeDevice.instances))
+        self.assertFalse(indicator._worker.is_alive())
+
     def test_concurrent_first_requests_share_one_indicator(self):
         app = Flask(__name__)
         app.config.update(

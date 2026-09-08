@@ -3,9 +3,10 @@ from __future__ import annotations
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from equipment_manager.vision.camera import OpenCvFrameSource
+from equipment_manager.vision.camera import OpenCvFrameSource, Picamera2FrameSource
+from equipment_manager.vision.types import DetectionError
 
 
 class FakeCapture:
@@ -63,6 +64,30 @@ class OpenCvFrameSourceTestCase(unittest.TestCase):
         self.assertIs(source._camera, replacement)
         source.close()
         self.assertTrue(replacement.released)
+
+
+class Picamera2FrameSourceTestCase(unittest.TestCase):
+    def test_failed_or_interrupted_startup_closes_camera_and_can_retry(self):
+        for error in (RuntimeError("camera failed"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                camera = Mock()
+                source = Picamera2FrameSource(640, 480)
+                module = types.SimpleNamespace(Picamera2=lambda: camera)
+                expected = DetectionError if isinstance(error, Exception) else KeyboardInterrupt
+                with patch.dict(sys.modules, {"picamera2": module}), patch(
+                    "equipment_manager.vision.camera.time.sleep", side_effect=error
+                ):
+                    with self.assertRaises(expected):
+                        source._ensure_started()
+                camera.close.assert_called_once_with()
+                self.assertIsNone(source._camera)
+                self.assertFalse(source._started)
+                with patch.dict(sys.modules, {"picamera2": module}), patch(
+                    "equipment_manager.vision.camera.time.sleep"
+                ):
+                    source._ensure_started()
+                self.assertIs(source._camera, camera)
+                source.close()
 
 
 if __name__ == "__main__":

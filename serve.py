@@ -28,8 +28,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from equipment_manager import create_app
     from equipment_manager.config import Config
-    from equipment_manager.deployment import WAITRESS_OPTIONS, validate_deployment
-    from waitress import serve
+    from equipment_manager.deployment import validate_deployment
+    from equipment_manager.web_server import run_web_server
 
     try:
         validate_deployment(vars(Config), ROOT, allow_mock=args.allow_mock)
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
         print("주의: 웹 확인용 mock 인식입니다. 실제 기자재 인식 운영이 아닙니다.", flush=True)
     app = create_app({"DEBUG": False, "TESTING": False})
     try:
-        serve(app, **WAITRESS_OPTIONS)
+        run_web_server(app)
     finally:
         app.extensions["shutdown_services"]()
     return 0

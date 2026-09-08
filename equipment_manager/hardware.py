@@ -12,6 +12,19 @@ INDICATOR_LOCK_KEY = "status_indicator_lock"
 INDICATOR_KEY = "status_indicator"
 
 
+def _close_devices(devices) -> None:
+    for device in devices:
+        # A disconnected pin can fail to switch off but must still be closed.
+        try:
+            device.off()
+        except Exception:
+            logger.debug("GPIO device off during cleanup failed", exc_info=True)
+        try:
+            device.close()
+        except Exception:
+            logger.debug("GPIO device close failed", exc_info=True)
+
+
 class NullIndicator:
     def success(self) -> None:
         return None
@@ -40,12 +53,8 @@ class GpioIndicator:
             devices.append(red)
             buzzer = Buzzer(buzzer_pin)
             devices.append(buzzer)
-        except Exception:
-            for device in devices:
-                try:
-                    device.close()
-                except Exception:
-                    logger.debug("GPIO cleanup after initialization failure failed", exc_info=True)
+        except BaseException:
+            _close_devices(devices)
             raise
 
         self.green = green
@@ -60,7 +69,11 @@ class GpioIndicator:
             name="gpio-indicator",
             daemon=True,
         )
-        self._worker.start()
+        try:
+            self._worker.start()
+        except BaseException:
+            self.close()
+            raise
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -118,12 +131,7 @@ class GpioIndicator:
                 self._events.task_done()
             except queue.Empty:
                 break
-        for device in (self.green, self.red, self.buzzer):
-            try:
-                device.off()
-                device.close()
-            except Exception:
-                logger.debug("GPIO device close failed", exc_info=True)
+        _close_devices((self.green, self.red, self.buzzer))
 
 
 def init_hardware(app) -> None:
