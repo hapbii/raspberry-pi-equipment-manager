@@ -30,7 +30,7 @@ body {
   overflow-x: hidden;
 }
 a { color: inherit; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 .skip-link { position: fixed; left: 12px; top: -60px; z-index: 100; padding: 10px 14px; border-radius: 8px; color: white; background: var(--navy); }
 .skip-link:focus { top: 12px; }
@@ -135,12 +135,16 @@ h2 { color: var(--navy); }
 .step-label { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; color: var(--navy); font-weight: 800; }
 .step-label span { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 9px; background: linear-gradient(135deg, var(--blue), #668df3); color: white; box-shadow: 0 6px 14px rgba(47,111,237,.22); }
 label { display: block; margin-bottom: 17px; color: var(--navy); font-weight: 700; font-size: .88rem; }
-input, select {
+input, select, textarea {
   min-width: 0; width: 100%; margin-top: 7px; padding: 12px 13px; color: var(--ink); background: #fbfdff;
   border: 1px solid #c7d2e0; border-radius: 11px; outline: none; transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
-input:hover, select:hover { border-color: #9fb1c8; }
-input:focus, select:focus { border-color: var(--blue); background: white; box-shadow: 0 0 0 4px rgba(47,111,237,.12); }
+input:hover, select:hover, textarea:hover { border-color: #9fb1c8; }
+input:focus, select:focus, textarea:focus { border-color: var(--blue); background: white; box-shadow: 0 0 0 4px rgba(47,111,237,.12); }
+textarea { resize: vertical; min-height: 100px; }
+#loan-reason-field { margin-bottom: 20px; }
+#loan-reason-field label { margin-bottom: 0; }
+.transaction-reason { min-width: 160px; max-width: 280px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .field-help { margin: -10px 0 17px; color: var(--muted); font-size: .76rem; }
 .scan-form-panel > label:not(:first-of-type) { margin-top: 17px; }
 .scan-form-panel > input { margin-top: -10px; }

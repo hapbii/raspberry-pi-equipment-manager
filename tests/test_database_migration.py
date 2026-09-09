@@ -79,6 +79,8 @@ class DatabaseMigrationTestCase(unittest.TestCase):
                         "SELECT quantity FROM return_allocations"
                     ).fetchone()
                     self.assertIn("due_date", columns)
+                    self.assertIn("reason", columns)
+                    self.assertEqual(db.execute("SELECT reason FROM transactions WHERE id = 'loan-old'").fetchone()[0], "")
                     self.assertIn("loan_period_days", equipment_columns)
                     self.assertEqual(
                         db.execute(

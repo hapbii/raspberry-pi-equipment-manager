@@ -125,7 +125,9 @@
     const resultPanel = document.querySelector("#scan-result");
     const message = document.querySelector("#scan-message");
     const studentInput = document.querySelector("#student-id");
-    const quantityInput = document.querySelector("#quantity");
+    const reasonInput = document.querySelector("#loan-reason");
+    const reasonField = document.querySelector("#loan-reason-field");
+    const recognitionReady = scanApp.dataset.mode === "yolo";
     const resultLoanPeriod = document.querySelector("#result-loan-period");
     const actionInputs = document.querySelectorAll('input[name="action"]');
     const pinRequired = scanApp.dataset.pinRequired === "true";
@@ -139,15 +141,25 @@
     let scanDueDate = null;
     let scanLoanPeriodDays = null;
     let saving = false;
+    let scanning = false;
+
+    function updateControls() {
+      const busy = saving || scanning;
+      [confirmButton, retryButton, studentInput, ...actionInputs].forEach((element) => {
+        element.disabled = busy;
+      });
+      detectButton.disabled = busy || !recognitionReady;
+      reasonInput.disabled = busy || selectedAction() === "return";
+    }
 
     function setSaving(value) {
       saving = value;
-      [confirmButton, detectButton, retryButton, studentInput, quantityInput,
-        ...actionInputs, pinInput, pinConfirmButton, pinCancelButton].forEach((element) => {
+      [pinInput, pinConfirmButton, pinCancelButton].forEach((element) => {
         if (element) element.disabled = value;
       });
+      updateControls();
       confirmButton.toggleAttribute("aria-busy", value);
-      confirmButton.textContent = value ? "저장 중..." : "이 결과로 처리";
+      confirmButton.textContent = value ? "저장 중..." : `이 기자재 ${selectedAction() === "loan" ? "대여" : "반납"}하기`;
       pinConfirmButton.textContent = value ? "확인 중..." : "확인 후 처리";
     }
 
@@ -156,6 +168,11 @@
     }
 
     function syncLoanPeriodResult() {
+      const isLoan = selectedAction() === "loan";
+      reasonField.classList.toggle("hidden", !isLoan);
+      reasonInput.required = isLoan;
+      if (!saving) confirmButton.textContent = `이 기자재 ${isLoan ? "대여" : "반납"}하기`;
+      updateControls();
       const showPeriod = selectedAction() === "loan" && scanDueDate !== null;
       resultLoanPeriod.classList.toggle("hidden", !showPeriod);
       if (showPeriod) {
@@ -164,6 +181,16 @@
     }
 
     actionInputs.forEach((input) => input.addEventListener("change", syncLoanPeriodResult));
+    syncLoanPeriodResult();
+
+    function formError() {
+      if (!studentInput.value.trim()) return "학번을 입력해 주세요.";
+      if (selectedAction() === "loan") {
+        if (!reasonInput.value.trim()) return "대여 사유를 입력해 주세요.";
+        if (reasonInput.value.trim().length > 200) return "대여 사유는 200자 이내로 입력해 주세요.";
+      }
+      return null;
+    }
 
     function showMessage(text, success = false) {
       message.textContent = text;
@@ -183,26 +210,23 @@
     }
 
     detectButton.addEventListener("click", async () => {
+      if (scanning || saving || !recognitionReady) return;
       resetResult();
-      const quantity = Number(quantityInput.value);
-      if (!studentInput.value.trim()) return showMessage("학번을 먼저 입력해 주세요.");
-      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
-        return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
-      }
-      detectButton.disabled = true;
+      const error = formError();
+      if (error) return showMessage(error);
+      scanning = true;
+      updateControls();
       detectButton.setAttribute("aria-busy", "true");
       detectButton.textContent = "인식 중...";
       try {
-        const mockSelect = document.querySelector("#mock-equipment");
         const data = await postJson("/api/scans", {
-          mock_equipment_id: mockSelect ? Number(mockSelect.value) : undefined,
           student_id: studentInput.value.trim(),
           action: selectedAction(),
         });
         scanToken = data.scan.token;
         scanDueDate = data.scan.due_date;
         scanLoanPeriodDays = data.scan.loan_period_days;
-        document.querySelector("#result-name").textContent = data.scan.equipment_name;
+        document.querySelector("#result-name").textContent = `${data.scan.equipment_name} 기자재입니다.`;
         document.querySelector("#result-confidence").textContent = `${(data.scan.confidence * 100).toFixed(1)}%`;
         document.querySelector("#result-votes").textContent = `${data.votes}/${data.frame_count} 프레임 일치`;
         document.querySelector("#result-duration").textContent = `${(data.duration_ms / 1000).toFixed(2)}초`;
@@ -212,7 +236,8 @@
       } catch (error) {
         showMessage(error.message);
       } finally {
-        detectButton.disabled = false;
+        scanning = false;
+        updateControls();
         detectButton.removeAttribute("aria-busy");
         detectButton.textContent = "객체 인식 시작";
       }
@@ -221,14 +246,13 @@
     async function submitTransaction(stationPin = "") {
       if (saving) return;
       const studentId = studentInput.value.trim();
-      const quantity = Number(quantityInput.value);
       const action = selectedAction();
-      if (!studentId) return showMessage("학번을 입력해 주세요.");
-      if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
-      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+      const error = formError();
+      if (error) {
         if (pinDialog?.open) pinDialog.close();
-        return showMessage("수량은 1개부터 20개 사이로 입력해 주세요.");
+        return showMessage(error);
       }
+      if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       setSaving(true);
       pinInput.value = "";
       try {
@@ -236,7 +260,8 @@
           scan_token: scanToken,
           student_id: studentId,
           action,
-          quantity,
+          quantity: 1,
+          reason: action === "loan" ? reasonInput.value.trim() : "",
           station_pin: stationPin,
         });
         stationPin = "";
@@ -246,7 +271,7 @@
         const dueText = tx.due_date ? ` · 반납 예정 ${tx.due_date}` : "";
         showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다${dueText}. 현재 사용 가능 ${tx.available_qty}개`, true);
         studentInput.value = "";
-        quantityInput.value = "1";
+        reasonInput.value = "";
         scanToken = null;
         resultPanel.classList.add("hidden");
         placeholder.classList.remove("hidden");
@@ -268,7 +293,8 @@
 
     confirmButton.addEventListener("click", () => {
       if (saving) return;
-      if (!studentInput.value.trim()) return showMessage("학번을 입력해 주세요.");
+      const error = formError();
+      if (error) return showMessage(error);
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       if (!pinRequired) {
         submitTransaction();

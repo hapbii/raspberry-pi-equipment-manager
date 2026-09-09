@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-function setup(pinRequired = true) {
+function setup(pinRequired = true, mode = 'yolo') {
   const elements = new Map();
   const timers = new Map();
   const pageEvents = new Map();
@@ -15,7 +15,7 @@ function setup(pinRequired = true) {
       const classes = new Set();
       elements.set(id, {
         value: '', disabled: false, open: false,
-        dataset: { pinRequired: String(pinRequired) }, events: new Map(),
+        dataset: { pinRequired: String(pinRequired), mode }, events: new Map(),
         classList: {
           add: (...names) => names.forEach((name) => classes.add(name)),
           remove: (...names) => names.forEach((name) => classes.delete(name)),
@@ -66,11 +66,43 @@ function setup(pinRequired = true) {
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
+test('loan reason is required before detection but return needs only a student', async () => {
+  const ui = setup();
+  ui.element('#student-id').value = '30304';
+  await ui.fire('#detect-button', 'click');
+  assert.equal(ui.requests.length, 0);
+  assert.equal(ui.element('#scan-message').textContent, '대여 사유를 입력해 주세요.');
+  ui.element('action').value = 'return';
+  ui.fire('action', 'change');
+  assert.equal(ui.element('#loan-reason').required, false);
+  assert.equal(ui.element('#loan-reason').disabled, true);
+  const detecting = ui.fire('#detect-button', 'click');
+  assert.equal(ui.requests[0].body.action, 'return');
+  assert.equal(ui.element('#student-id').disabled, true);
+  ui.fire('#detect-button', 'click');
+  assert.equal(ui.requests.length, 1);
+  ui.answer(ui.requests[0], { ok: true, scan: { token: 'return-1', confidence: 0.9,
+    equipment_name: '멀티미터', due_date: null, loan_period_days: 7 },
+    votes: 3, frame_count: 3, duration_ms: 10 });
+  await detecting;
+  assert.equal(ui.element('#confirm-button').textContent, '이 기자재 반납하기');
+  ui.fire('#confirm-button', 'click');
+  assert.equal(ui.element('#station-pin-dialog').open, true);
+});
+
+test('mock page does not offer manual equipment selection or start recognition', async () => {
+  const ui = setup(true, 'mock');
+  ui.element('#student-id').value = '30304';
+  ui.element('#loan-reason').value = '실습';
+  assert.equal(ui.element('#detect-button').disabled, true);
+  await ui.fire('#detect-button', 'click');
+  assert.equal(ui.requests.length, 0);
+});
+
 test('developer final confirmation skips the PIN dialog and submits only once', async () => {
   const ui = setup(false);
   ui.element('#student-id').value = '30304';
-  ui.element('#quantity').value = '1';
-  ui.element('#mock-equipment').value = '1';
+  ui.element('#loan-reason').value = '수업 실습';
   const detecting = ui.fire('#detect-button', 'click');
   ui.answer(ui.requests[0], { ok: true, scan: { token: 'scan-developer', confidence: 0.99,
     equipment_name: 'meter', due_date: '2026-09-10', loan_period_days: 7 },
@@ -82,6 +114,10 @@ test('developer final confirmation skips the PIN dialog and submits only once', 
   assert.equal(ui.requests.length, 2);
   assert.equal(ui.requests[1].url, '/api/transactions');
   assert.ok(!ui.requests[1].body.station_pin);
+  assert.equal(ui.requests[1].body.quantity, 1);
+  assert.equal(ui.requests[1].body.reason, '수업 실습');
+  assert.ok(!('mock_equipment_id' in ui.requests[0].body));
+  assert.equal(ui.element('#result-name').textContent, 'meter 기자재입니다.');
   ui.answer(ui.requests[1], { ok: true, transaction: { action: 'loan',
     equipment_name: 'meter', quantity: 1, available_qty: 2 } });
   await settle();
@@ -91,8 +127,7 @@ test('developer final confirmation skips the PIN dialog and submits only once', 
 test('PIN retries send one transaction at a time and release request timers', async () => {
   const ui = setup();
   ui.element('#student-id').value = '30304';
-  ui.element('#quantity').value = '1';
-  ui.element('#mock-equipment').value = '1';
+  ui.element('#loan-reason').value = '수업 실습';
   const detecting = ui.fire('#detect-button', 'click');
   ui.answer(ui.requests[0], { ok: true, scan: { token: 'scan-1', confidence: 0.99,
     equipment_name: 'meter', due_date: '2026-09-10', loan_period_days: 7 },
@@ -122,7 +157,7 @@ test('page exit and request timeout release pending scan timers and controls', a
   for (const stop of ['pagehide', 'timeout']) {
     const ui = setup();
     ui.element('#student-id').value = '30304';
-    ui.element('#quantity').value = '1';
+    ui.element('#loan-reason').value = '수업 실습';
     const detecting = ui.fire('#detect-button', 'click');
     if (stop === 'pagehide') ui.pageEvents.get('pagehide')();
     else [...ui.timers.values()][0]();

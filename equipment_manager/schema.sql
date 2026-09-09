@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     scan_token TEXT REFERENCES scan_sessions(token),
     created_at TEXT NOT NULL,
     due_date TEXT,
+    reason TEXT NOT NULL DEFAULT '',
     reversed_at TEXT,
     reversed_by TEXT
 );

@@ -47,6 +47,7 @@ def init_app_database() -> None:
     db.executescript(schema_path.read_text(encoding="utf-8"))
     _migrate_equipment_loan_periods(db)
     _migrate_transaction_due_dates(db)
+    _migrate_transaction_reasons(db)
     _backfill_active_loans(db)
 
     count = db.execute("SELECT COUNT(*) FROM equipment").fetchone()[0]
@@ -112,6 +113,12 @@ def _migrate_transaction_due_dates(db: sqlite3.Connection) -> None:
     }
     if "due_date" not in columns:
         db.execute("ALTER TABLE transactions ADD COLUMN due_date TEXT")
+
+
+def _migrate_transaction_reasons(db: sqlite3.Connection) -> None:
+    columns = {row[1] for row in db.execute("PRAGMA table_info(transactions)")}
+    if "reason" not in columns:
+        db.execute("ALTER TABLE transactions ADD COLUMN reason TEXT NOT NULL DEFAULT ''")
 
 
 def _backfill_active_loans(db: sqlite3.Connection) -> None:

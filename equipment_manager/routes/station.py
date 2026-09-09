@@ -32,7 +32,7 @@ def station_logout():
 
 @bp.get("/scan")
 def scan_page():
-    return render_template("scan.html", inventory=list_inventory())
+    return render_template("scan.html")
 
 
 @bp.post("/api/scans")
@@ -123,6 +123,7 @@ def api_create_transaction():
             student_id=str(data.get("student_id", "")),
             action=str(data.get("action", "")),
             quantity=quantity,
+            reason=data.get("reason", ""),
         )
         get_indicator().success()
         return jsonify({"ok": True, "transaction": result.__dict__})

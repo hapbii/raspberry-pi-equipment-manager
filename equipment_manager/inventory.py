@@ -27,6 +27,7 @@ class TransactionResult:
     available_qty: int
     total_qty: int
     due_date: str | None
+    reason: str
 
 
 def list_inventory() -> list[dict]:
@@ -217,12 +218,26 @@ def commit_transaction(
     student_id: str,
     action: str,
     quantity: int,
+    reason: str = "",
 ) -> TransactionResult:
     student_id = _validate_student_id(student_id)
     if action not in {"loan", "return"}:
         raise InventoryError("대여 또는 반납을 선택해 주세요.")
     if not isinstance(quantity, int) or quantity < 1 or quantity > 20:
         raise InventoryError("수량은 1~20 사이여야 합니다.")
+    if not isinstance(reason, str):
+        raise InventoryError("대여 사유는 글자로 입력해 주세요.")
+    reason = reason.strip()
+    try:
+        reason.encode("utf-8")
+    except UnicodeEncodeError:
+        raise InventoryError("대여 사유에 사용할 수 없는 문자가 있습니다.") from None
+    if len(reason) > 200:
+        raise InventoryError("대여 사유는 200자 이내로 입력해 주세요.")
+    if action == "loan" and not reason:
+        raise InventoryError("대여 사유를 입력해 주세요.")
+    if action == "return":
+        reason = ""
     db = get_db()
     now = utc_now()
     try:
@@ -288,8 +303,8 @@ def commit_transaction(
             """
             INSERT INTO transactions(
                 id, student_id, equipment_id, action, quantity,
-                confidence, scan_token, created_at, due_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                confidence, scan_token, created_at, due_date, reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 transaction_id,
@@ -301,6 +316,7 @@ def commit_transaction(
                 scan_token,
                 now,
                 resolved_due_date,
+                reason,
             ),
         )
         if action == "loan":
@@ -339,6 +355,7 @@ def commit_transaction(
             available_qty=new_available,
             total_qty=total,
             due_date=resolved_due_date,
+            reason=reason,
         )
     except Exception:
         db.rollback()
@@ -398,7 +415,7 @@ def list_transactions(limit: int = 100, query: str = "") -> list[dict]:
     rows = get_db().execute(
         f"""
         SELECT t.id, t.student_id, e.name AS equipment_name, t.action,
-               t.quantity, t.confidence, t.created_at, t.due_date,
+               t.quantity, t.confidence, t.created_at, t.due_date, t.reason,
                t.reversed_at, t.reversed_by
         FROM transactions t
         JOIN equipment e ON e.id = t.equipment_id

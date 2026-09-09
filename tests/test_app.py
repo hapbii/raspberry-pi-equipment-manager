@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -70,6 +72,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         quantity=1,
         due_date=None,
         station_pin="2468",
+        reason="실습 수업",
     ):
         payload = {
             "scan_token": token,
@@ -77,6 +80,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
             "action": action,
             "quantity": quantity,
             "due_date": due_date,
+            "reason": reason,
         }
         if station_pin is not None:
             payload["station_pin"] = station_pin
@@ -146,6 +150,67 @@ class EquipmentManagerTestCase(unittest.TestCase):
         token = self.scan(self.first_equipment()["id"])
         response = self.transact(token, station_pin=None)
         self.assertEqual(response.status_code, 200, response.get_json())
+
+    def test_scan_form_only_requests_student_and_loan_reason(self):
+        for mode in ("mock", "yolo"):
+            with self.subTest(mode=mode):
+                self.app.config["DETECTOR_MODE"] = mode
+                html = self.client.get("/scan").get_data(as_text=True)
+                self.assertIn('id="student-id"', html)
+                self.assertIn('id="loan-reason"', html)
+                self.assertNotIn('id="quantity"', html)
+                self.assertNotIn('id="mock-equipment"', html)
+                self.assertEqual("객체 인식 준비 중" in html, mode == "mock")
+
+    def test_loan_reason_is_required_bounded_and_saved_in_history(self):
+        item = self.first_equipment()
+        token = self.scan(item["id"])
+        for reason in ("", "   ", None, ["실습"], "가" * 201, "\ud800"):
+            rejected = self.transact(token, reason=reason)
+            self.assertEqual(rejected.status_code, 422, rejected.get_json())
+            self.assertEqual(self.first_equipment()["available_qty"], item["available_qty"])
+        reason = "  센서 실습 <script>alert(1)</script>\n회로 측정  "
+        accepted = self.transact(token, reason=reason)
+        self.assertEqual(accepted.status_code, 200, accepted.get_json())
+        self.assertEqual(accepted.get_json()["transaction"]["reason"], reason.strip())
+        self.login_admin()
+        html = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn("센서 실습 &lt;script&gt;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        returned = self.transact(self.scan(item["id"]), action="return", reason="")
+        self.assertEqual(returned.status_code, 200, returned.get_json())
+        self.assertEqual(returned.get_json()["transaction"]["reason"], "")
+        self.assertNotIn("센서 실습", self.client.get("/api/status").get_data(as_text=True))
+
+    def test_yolo_result_not_client_equipment_selection_controls_transaction(self):
+        from equipment_manager.vision.types import Detection
+
+        item = self.first_equipment()
+        self.app.config["DETECTOR_MODE"] = "yolo"
+        service = self.app.extensions["detection_service"]
+        with patch.object(service, "detect", return_value=Detection(
+            label=item["name"], confidence=0.95, votes=3, frame_count=3
+        )) as detect:
+            response = self.client.post("/api/scans", json={
+                "student_id": "30304", "action": "loan", "mock_equipment_id": 999,
+            })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        detect.assert_called_once_with(None)
+        scan = response.get_json()["scan"]
+        self.assertEqual(scan["equipment_name"], item["name"])
+        result = self.client.post("/api/transactions", json={
+            "scan_token": scan["token"], "student_id": "30304", "action": "loan",
+            "quantity": 1, "reason": "물리 실험", "station_pin": "2468", "equipment_id": 999,
+        })
+        self.assertEqual(result.status_code, 200, result.get_json())
+        self.assertEqual(result.get_json()["transaction"]["equipment_name"], item["name"])
+
+    def test_export_includes_reason_without_spreadsheet_formula_execution(self):
+        self.transact(self.scan(self.first_equipment()["id"]), reason="=1+1")
+        self.login_admin()
+        text = self.client.get("/admin/export.csv").get_data(as_text=True)
+        rows = list(csv.DictReader(io.StringIO(text.lstrip("\ufeff"))))
+        self.assertEqual(rows[0]["대여사유"], "'=1+1")
 
     def test_public_pages_do_not_display_default_password_banner(self):
         self.app.config.update(

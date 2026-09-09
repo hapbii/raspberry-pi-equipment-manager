@@ -146,11 +146,11 @@ def admin_export_csv():
     output.write("\ufeff")
     writer = csv.writer(output)
     writer.writerow(
-        ["거래ID", "학번", "기자재", "구분", "수량", "반납예정일", "신뢰도", "처리시각", "취소시각"]
+        ["거래ID", "학번", "기자재", "구분", "수량", "반납예정일", "신뢰도", "처리시각", "취소시각", "대여사유"]
     )
     for row in list_transactions(500):
         writer.writerow(
-            [
+            [_csv_safe_value(value) for value in [
                 row["id"],
                 row["student_id"],
                 row["equipment_name"],
@@ -160,10 +160,17 @@ def admin_export_csv():
                 row["confidence"],
                 row["created_at"],
                 row["reversed_at"] or "",
-            ]
+                row["reason"],
+            ]]
         )
     return current_app.response_class(
         output.getvalue(),
         mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=equipment-transactions.csv"},
     )
+
+
+def _csv_safe_value(value):
+    if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
