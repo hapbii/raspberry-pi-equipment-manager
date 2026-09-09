@@ -10,6 +10,7 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 INDICATOR_LOCK_KEY = "status_indicator_lock"
 INDICATOR_KEY = "status_indicator"
+INDICATOR_CLOSED_KEY = "status_indicator_closed"
 
 
 def _close_devices(devices) -> None:
@@ -45,6 +46,17 @@ class GpioIndicator:
         except ImportError as exc:
             raise RuntimeError("gpiozero 패키지가 설치되어 있지 않습니다.") from exc
 
+        # Allocate bookkeeping before opening GPIO handles: allocation failures
+        # must not strand already-open LEDs or buzzers.
+        self._events: queue.Queue[tuple[object, int]] = queue.Queue(maxsize=4)
+        self._stop_event = threading.Event()
+        self._close_lock = threading.Lock()
+        self._closed = False
+        self._worker = threading.Thread(
+            target=self._run,
+            name="gpio-indicator",
+            daemon=True,
+        )
         devices = []
         try:
             green = LED(green_pin)
@@ -60,15 +72,6 @@ class GpioIndicator:
         self.green = green
         self.red = red
         self.buzzer = buzzer
-        self._events: queue.Queue[tuple[object, int]] = queue.Queue(maxsize=4)
-        self._stop_event = threading.Event()
-        self._close_lock = threading.Lock()
-        self._closed = False
-        self._worker = threading.Thread(
-            target=self._run,
-            name="gpio-indicator",
-            daemon=True,
-        )
         try:
             self._worker.start()
         except BaseException:
@@ -137,15 +140,32 @@ class GpioIndicator:
 def init_hardware(app) -> None:
     """요청이 동시에 시작되어도 표시기는 한 번만 생성되도록 준비합니다."""
     app.extensions[INDICATOR_LOCK_KEY] = threading.Lock()
+    app.extensions[INDICATOR_CLOSED_KEY] = False
+
+
+def close_hardware(app) -> None:
+    """Close exactly once and prevent late requests from reopening devices."""
+    lock = app.extensions.get(INDICATOR_LOCK_KEY)
+    if lock is None:
+        return
+    with lock:
+        app.extensions[INDICATOR_CLOSED_KEY] = True
+        indicator = app.extensions.pop(INDICATOR_KEY, None)
+    if indicator is not None:
+        indicator.close()
 
 
 def get_indicator():
+    if current_app.extensions.get(INDICATOR_CLOSED_KEY):
+        return NullIndicator()
     indicator = current_app.extensions.get(INDICATOR_KEY)
     if indicator is not None:
         return indicator
 
     lock = current_app.extensions[INDICATOR_LOCK_KEY]
     with lock:
+        if current_app.extensions.get(INDICATOR_CLOSED_KEY):
+            return NullIndicator()
         indicator = current_app.extensions.get(INDICATOR_KEY)
         if indicator is not None:
             return indicator

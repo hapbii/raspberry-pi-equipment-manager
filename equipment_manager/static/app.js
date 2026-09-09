@@ -1,5 +1,9 @@
 (() => {
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
   const pendingRequests = new Set();
   window.addEventListener("pagehide", () => {
     pendingRequests.forEach((controller) => controller.abort());
@@ -9,10 +13,7 @@
     if (!value) return "기록 없음";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
-    return new Intl.DateTimeFormat("ko-KR", {
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit",
-    }).format(date);
+    return dateFormatter.format(date);
   }
 
   async function postJson(url, body) {
@@ -202,6 +203,10 @@
       scanToken = null;
       scanDueDate = null;
       scanLoanPeriodDays = null;
+      ["#result-name", "#result-confidence", "#result-votes", "#result-duration"].forEach((selector) => {
+        document.querySelector(selector).textContent = "";
+      });
+      resultLoanPeriod.textContent = "";
       resultPanel.classList.add("hidden");
       resultLoanPeriod.classList.add("hidden");
       placeholder.classList.remove("hidden");
@@ -269,13 +274,10 @@
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
         const dueText = tx.due_date ? ` · 반납 예정 ${tx.due_date}` : "";
-        showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다${dueText}. 현재 사용 가능 ${tx.available_qty}개`, true);
         studentInput.value = "";
         reasonInput.value = "";
-        scanToken = null;
-        resultPanel.classList.add("hidden");
-        placeholder.classList.remove("hidden");
-        if (pinDialog?.open) pinDialog.close();
+        resetResult();
+        showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다${dueText}. 현재 사용 가능 ${tx.available_qty}개`, true);
       } catch (error) {
         if (error.code === "station_pin_invalid" && pinDialog?.open) {
           pinError.textContent = error.message;

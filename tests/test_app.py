@@ -182,6 +182,19 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(returned.get_json()["transaction"]["reason"], "")
         self.assertNotIn("센서 실습", self.client.get("/api/status").get_data(as_text=True))
 
+    def test_oversized_reason_is_rejected_before_encoding_copy(self):
+        from equipment_manager.inventory import InventoryError, _validate_loan_reason
+
+        class LargeReason(str):
+            def strip(self):
+                return self
+
+            def encode(self, *_args, **_kwargs):
+                raise AssertionError("oversized reason should not be encoded")
+
+        with self.assertRaisesRegex(InventoryError, "200자"):
+            _validate_loan_reason(LargeReason("가" * 100_000), "loan")
+
     def test_yolo_result_not_client_equipment_selection_controls_transaction(self):
         from equipment_manager.vision.types import Detection
 

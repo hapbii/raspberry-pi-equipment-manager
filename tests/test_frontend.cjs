@@ -122,6 +122,9 @@ test('developer final confirmation skips the PIN dialog and submits only once', 
     equipment_name: 'meter', quantity: 1, available_qty: 2 } });
   await settle();
   assert.equal(ui.timers.size, 0);
+  assert.equal(ui.element('#loan-reason').value, '');
+  assert.equal(ui.element('#result-name').textContent, '');
+  assert.equal(ui.element('#result-loan-period').textContent, '');
 });
 
 test('PIN retries send one transaction at a time and release request timers', async () => {

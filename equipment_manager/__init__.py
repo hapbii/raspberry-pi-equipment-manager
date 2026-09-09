@@ -10,7 +10,7 @@ from flask import Flask
 from .config import Config
 from .db import close_db, init_app_database
 from .error_logs import ErrorLogStore
-from .hardware import INDICATOR_KEY, init_hardware
+from .hardware import INDICATOR_KEY, close_hardware, init_hardware
 from .runtime import HeartbeatService
 from .vision import build_detection_service
 
@@ -48,11 +48,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                 (INDICATOR_KEY, "close"),
                 ("error_log_store", "close"),
             ):
-                service = app.extensions.pop(key, None)
-                if service is None:
-                    continue
                 try:
-                    getattr(service, method)()
+                    if key == INDICATOR_KEY:
+                        close_hardware(app)
+                    else:
+                        service = app.extensions.pop(key, None)
+                        if service is not None:
+                            getattr(service, method)()
                 except Exception:
                     app.logger.exception("Failed to close %s service", key)
 
