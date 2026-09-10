@@ -37,6 +37,13 @@ class DetectionService:
             with self._metrics_lock:
                 self._busy_rejections += 1
             raise DetectionError("현재 다른 인식 작업을 처리 중입니다. 잠시 후 다시 시도해 주세요.")
+        try:
+            return self._detect_locked(category_hint)
+        finally:
+            # Metrics and cleanup may also fail; neither may strand the lock.
+            self._lock.release()
+
+    def _detect_locked(self, category_hint: str | None) -> Detection:
         started = perf_counter()
         succeeded = False
         try:
@@ -48,13 +55,14 @@ class DetectionService:
             if detector is None:
                 raise DetectionError("객체 인식 서비스가 종료되었습니다.")
             detection = detector.detect(category_hint)
-            succeeded = True
             duration_ms = round((perf_counter() - started) * 1000)
-            return replace(
+            result = replace(
                 detection,
                 duration_ms=duration_ms,
                 memory_rss_mb=current_rss_mb(),
             )
+            succeeded = True
+            return result
         except Exception as exc:
             with self._metrics_lock:
                 self.last_error = str(exc)[:500]
@@ -73,8 +81,11 @@ class DetectionService:
                     and self._attempt_count % self.gc_interval_scans == 0
                 )
             if should_collect:
-                gc.collect()
-            self._lock.release()
+                try:
+                    gc.collect()
+                except Exception:
+                    # Preserve the inference result/original exception.
+                    logger.warning("Post-inference garbage collection failed", exc_info=True)
 
     def preflight(self) -> PreflightResult:
         with self._lock:

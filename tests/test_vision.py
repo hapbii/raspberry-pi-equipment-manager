@@ -195,6 +195,58 @@ class FakeFrameIterator:
 
 
 class DetectionServiceTestCase(unittest.TestCase):
+    def test_cleanup_failure_does_not_strand_lock_or_replace_result(self):
+        detector = FakeDetector()
+        service = DetectionService(detector, gc_interval_scans=1)
+        with patch("equipment_manager.vision.service.gc.collect", side_effect=MemoryError), self.assertLogs(
+            "equipment_manager.vision.service", level="WARNING"
+        ):
+            for _ in range(100):
+                self.assertEqual(service.detect().label, "멀티미터")
+                self.assertFalse(service.status()["busy"])
+        self.assertEqual(service.status()["scan_count"], 100)
+        service.close()
+        self.assertTrue(detector.closed)
+        self.assertIsNone(service._detector)
+
+    def test_cleanup_failure_preserves_inference_error(self):
+        service = DetectionService(FailingDetector(), gc_interval_scans=1)
+        with patch("equipment_manager.vision.service.gc.collect", side_effect=MemoryError), self.assertLogs(
+            "equipment_manager.vision.service", level="WARNING"
+        ):
+            with self.assertRaises(DetectionError):
+                service.detect()
+        self.assertFalse(service.status()["busy"])
+        self.assertEqual(service.status()["failure_count"], 1)
+        service.close()
+
+    def test_metadata_failure_is_not_counted_as_success(self):
+        service = DetectionService(FakeDetector())
+        with patch("equipment_manager.vision.service.current_rss_mb", side_effect=MemoryError):
+            with self.assertRaises(MemoryError):
+                service.detect()
+        self.assertEqual(service.status()["scan_count"], 0)
+        self.assertEqual(service.status()["failure_count"], 1)
+        self.assertFalse(service.status()["busy"])
+        service.detect()
+        service.close()
+
+    def test_clock_failure_releases_lock(self):
+        service = DetectionService(FakeDetector())
+        with patch("equipment_manager.vision.service.perf_counter", side_effect=RuntimeError):
+            with self.assertRaises(RuntimeError):
+                service.detect()
+        self.assertFalse(service.status()["busy"])
+        service.close()
+
+    def test_interrupted_cleanup_releases_lock(self):
+        service = DetectionService(FakeDetector(), gc_interval_scans=1)
+        with patch("equipment_manager.vision.service.gc.collect", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                service.detect()
+        self.assertFalse(service.status()["busy"])
+        service.close()
+
     def test_service_reuses_one_detector_and_releases_it(self):
         detector = FakeDetector()
         service = DetectionService(detector, gc_interval_scans=3)

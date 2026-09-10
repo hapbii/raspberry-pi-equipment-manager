@@ -8,7 +8,8 @@ from dotenv import load_dotenv
 
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+if __name__ == "__main__":
+    load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
 from equipment_manager import create_app  # noqa: E402
@@ -29,6 +30,20 @@ def linux_memory() -> tuple[float | None, float | None]:
 
 def main() -> int:
     app = create_app({"HEARTBEAT_ENABLED": False})
+    return run_diagnostics(app)
+
+
+def run_diagnostics(app) -> int:
+    try:
+        return _run_diagnostics(app)
+    except KeyboardInterrupt:
+        print("\n사용자가 검사를 중지했습니다.")
+        return 130
+    finally:
+        app.extensions["shutdown_services"]()
+
+
+def _run_diagnostics(app) -> int:
     total_mb, available_mb = linux_memory()
     print("=== Raspberry Pi 실제 장치 사전 점검 ===")
     print(f"OS: {platform.platform()}")
@@ -43,7 +58,6 @@ def main() -> int:
 
     if app.config["DETECTOR_MODE"] != "yolo":
         print("실패: .env의 DETECTOR_MODE를 yolo로 변경하세요.")
-        app.extensions["shutdown_services"]()
         return 2
 
     try:
@@ -61,8 +75,6 @@ def main() -> int:
     except DetectionError as exc:
         print(f"\n[실패] {exc}")
         return 1
-    finally:
-        app.extensions["shutdown_services"]()
 
 
 if __name__ == "__main__":
