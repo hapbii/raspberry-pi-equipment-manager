@@ -69,6 +69,9 @@ ON transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_student_equipment
 ON transactions(student_id, equipment_id);
 
+CREATE INDEX IF NOT EXISTS idx_transactions_scan_token
+ON transactions(scan_token);
+
 CREATE INDEX IF NOT EXISTS idx_active_loans_student_due
 ON active_loans(student_id, due_date);
 

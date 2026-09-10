@@ -219,9 +219,21 @@ def cleanup_expired_scan_sessions(retention_hours: int = 24) -> int:
         timespec="seconds"
     )
     db = get_db()
+    with db:
+        return delete_unreferenced_scan_sessions(db, cutoff)
+
+
+def delete_unreferenced_scan_sessions(db: sqlite3.Connection, cutoff: str) -> int:
+    """Prune old tokens without breaking transaction history; caller commits."""
     result = db.execute(
-        "DELETE FROM scan_sessions WHERE expires_at < ? OR consumed_at < ?",
+        """
+        DELETE FROM scan_sessions
+        WHERE (expires_at < ? OR consumed_at < ?)
+          AND NOT EXISTS (
+              SELECT 1 FROM transactions t
+              WHERE t.scan_token = scan_sessions.token
+          )
+        """,
         (cutoff, cutoff),
     )
-    db.commit()
     return result.rowcount

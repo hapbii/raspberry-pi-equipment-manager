@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import current_app
 
-from .db import get_db, utc_now
+from .db import delete_unreferenced_scan_sessions, get_db, utc_now
 
 
 STUDENT_ID_PATTERN = re.compile(r"^[0-9A-Za-z가-힣_-]{2,30}$")
@@ -136,7 +136,7 @@ def create_scan_session(equipment_id: int, confidence: float) -> dict:
     ttl = current_app.config["SCAN_TOKEN_TTL_SECONDS"]
     expires = created + timedelta(seconds=ttl)
     db = get_db()
-    db.execute("DELETE FROM scan_sessions WHERE expires_at < ?", (created.isoformat(timespec="seconds"),))
+    delete_unreferenced_scan_sessions(db, created.isoformat(timespec="seconds"))
     db.execute(
         """
         INSERT INTO scan_sessions(token, equipment_id, confidence, created_at, expires_at)
