@@ -111,13 +111,18 @@ class YoloDetector:
         except Exception as exc:
             raise DetectionError(f"YOLO 추론에 실패했습니다: {exc}") from exc
         finally:
-            if result_stream is not None and hasattr(result_stream, "close"):
+            try:
+                if result_stream is not None and hasattr(result_stream, "close"):
+                    try:
+                        result_stream.close()
+                    except Exception:
+                        logger.debug("YOLO result stream close failed", exc_info=True)
+            finally:
+                # An interrupted stream close must not retain predictor images.
                 try:
-                    result_stream.close()
-                except Exception:
-                    logger.debug("YOLO result stream close failed", exc_info=True)
-            self._clear_predictor_frame_references(model)
-            del boxes, result, result_stream
+                    self._clear_predictor_frame_references(model)
+                finally:
+                    boxes = result = result_stream = None
 
     @staticmethod
     def _clear_predictor_frame_references(model) -> None:

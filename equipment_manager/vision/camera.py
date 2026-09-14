@@ -94,15 +94,18 @@ class Picamera2FrameSource:
             started, self._started = self._started, False
             if camera is None:
                 return
-            if started:
-                try:
-                    camera.stop()
-                except Exception:
-                    logger.debug("Picamera2 stop failed", exc_info=True)
             try:
-                camera.close()
-            except Exception:
-                logger.debug("Picamera2 close failed", exc_info=True)
+                if started:
+                    try:
+                        camera.stop()
+                    except Exception:
+                        logger.debug("Picamera2 stop failed", exc_info=True)
+            finally:
+                # stop() can be interrupted too; never skip closing the handle.
+                try:
+                    camera.close()
+                except Exception:
+                    logger.debug("Picamera2 close failed", exc_info=True)
             logger.info("Picamera2 closed")
 
 
@@ -161,9 +164,13 @@ class OpenCvFrameSource:
             try:
                 for _ in range(max(1, count)):
                     ok, frame = self._camera.read()
-                    if not ok:
-                        raise DetectionError("USB 카메라 프레임을 읽지 못했습니다.")
-                    yield frame
+                    try:
+                        if not ok:
+                            raise DetectionError("USB 카메라 프레임을 읽지 못했습니다.")
+                        yield frame
+                    finally:
+                        # Do not keep the old image while allocating the next.
+                        frame = None
             except Exception:
                 self.close()
                 raise

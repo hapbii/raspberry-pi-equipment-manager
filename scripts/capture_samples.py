@@ -4,6 +4,7 @@ import argparse
 import re
 import sys
 import time
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -11,7 +12,8 @@ from dotenv import load_dotenv
 
 
 ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")
+if __name__ == "__main__":
+    load_dotenv(ROOT / ".env")
 sys.path.insert(0, str(ROOT))
 
 from equipment_manager.config import Config  # noqa: E402
@@ -47,41 +49,64 @@ def main() -> int:
         "CAMERA_BUFFER_COUNT": Config.CAMERA_BUFFER_COUNT,
         "CAMERA_WARMUP_SECONDS": Config.CAMERA_WARMUP_SECONDS,
     }
-    source = build_frame_source(config)
-
     try:
         import cv2
     except ImportError as exc:
         raise SystemExit("OpenCV가 필요합니다: sudo apt install python3-opencv") from exc
 
-    print(f"저장 위치: {output_dir}")
-    print("물체의 각도·거리·배경·조명을 조금씩 바꾸세요. 3초 뒤 시작합니다.")
-    time.sleep(3)
+    source = build_frame_source(config)
+    return capture_samples(source, cv2, output_dir, args.class_name, count, interval)
 
+
+def capture_samples(
+    source, cv2, output_dir: Path, class_name: str, count: int, interval: float
+) -> int:
+    """Own the camera and iterator for the entire capture, including startup."""
     try:
-        for index, frame in enumerate(source.frames(count), start=1):
-            if source.backend_name == "picamera2":
-                frame_to_save = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            else:
-                frame_to_save = frame
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            path = output_dir / f"{args.class_name}_{timestamp}_{index:04d}.jpg"
-            if not cv2.imwrite(str(path), frame_to_save, [cv2.IMWRITE_JPEG_QUALITY, 92]):
-                raise DetectionError(f"사진 저장에 실패했습니다: {path}")
-            print(f"{index:04d}/{count}: {path.name}")
-            del frame_to_save, frame
-            if index < count:
-                time.sleep(interval)
+        print(f"저장 위치: {output_dir}")
+        print("물체의 각도·거리·배경·조명을 조금씩 바꾸세요. 3초 뒤 시작합니다.")
+        time.sleep(3)
+        # Close the suspended iterator before closing the device it uses.
+        with closing(source.frames(count)) as frames:
+            index = 0
+            # enumerate's reusable result tuple can keep the previous image.
+            for frame in frames:
+                index += 1
+                try:
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    path = output_dir / f"{class_name}_{timestamp}_{index:04d}.jpg"
+                    _save_frame(source.backend_name, cv2, frame, path)
+                    print(f"{index:04d}/{count}: {path.name}")
+                finally:
+                    frame = None
+                if index < count:
+                    time.sleep(interval)
     except DetectionError as exc:
         print(f"실패: {exc}")
         return 1
     except KeyboardInterrupt:
         print("\n사용자가 촬영을 중지했습니다.")
+        return 130
     finally:
         source.close()
 
     print(f"촬영 완료: {output_dir}")
     return 0
+
+
+def _save_frame(backend: str, cv2, frame, path: Path) -> None:
+    frame_to_save = None
+    try:
+        frame_to_save = (
+            cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            if backend == "picamera2"
+            else frame
+        )
+        if not cv2.imwrite(str(path), frame_to_save, [cv2.IMWRITE_JPEG_QUALITY, 92]):
+            raise DetectionError(f"사진 저장에 실패했습니다: {path}")
+    finally:
+        # Even a retained exception traceback must not keep our image references.
+        frame_to_save = frame = None
 
 
 if __name__ == "__main__":

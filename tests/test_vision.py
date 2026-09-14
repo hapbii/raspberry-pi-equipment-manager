@@ -301,6 +301,29 @@ class DetectionServiceTestCase(unittest.TestCase):
 
 
 class YoloDetectorTestCase(unittest.TestCase):
+    def test_interrupted_result_stream_close_still_clears_predictor_frames(self):
+        model = FakeModel()
+        stream = FakeResultStream()
+        detector = YoloDetector({
+            "YOLO_MODEL_PATH": "unused.pt", "YOLO_IMAGE_SIZE": 320,
+            "YOLO_CONFIDENCE": 0.6, "YOLO_MIN_VOTES": 1,
+            "YOLO_FRAME_COUNT": 1, "YOLO_MAX_DETECTIONS": 5,
+            "INFERENCE_THREADS": 2,
+        }, frame_source=FakeFrameSource())
+        detector._model = model
+        for attribute in ("batch", "dataset", "results", "plotted_img"):
+            setattr(model.predictor, attribute, object())
+        try:
+            with patch.object(model, "predict", return_value=stream), patch.object(
+                stream, "close", side_effect=KeyboardInterrupt
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    detector._predict_best(FakeFrame())
+            for attribute in ("batch", "dataset", "results", "plotted_img"):
+                self.assertIsNone(getattr(model.predictor, attribute))
+        finally:
+            detector.close()
+
     def test_streaming_inference_reuses_model_and_camera(self):
         source = FakeFrameSource()
         model = FakeModel()
