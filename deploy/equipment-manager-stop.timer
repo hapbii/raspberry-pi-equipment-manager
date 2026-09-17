@@ -1,0 +1,11 @@
+[Unit]
+Description=Delayed application stop requested by Equipment Manager developer
+
+[Timer]
+OnActiveSec=10s
+AccuracySec=1s
+Unit=equipment-manager-stop.service
+# Unload after completion so the button works again after starting the app.
+RemainAfterElapse=no
+
+# Deliberately no [Install]: installation must never start this timer.

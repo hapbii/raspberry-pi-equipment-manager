@@ -88,11 +88,15 @@
 
 <section class="panel developer-actions">
   <div>
-    <h2>라즈베리파이 전원</h2>
+    <h2>프로그램 · 라즈베리파이 종료</h2>
     <p>종료하면 모든 사용자의 사이트 접속과 기자재 인식이 중단됩니다. 모두 사용을 마친 뒤 종료하세요.</p>
     {% if not poweroff_available %}<p>종료 기능 미설치 또는 비활성화 상태입니다. README 11부의 종료 기능 설치 안내를 확인하세요.</p>{% endif %}
+    {% if not program_stop_available %}<p>프로그램만 종료 기능은 최신 설치기로 종료 기능을 설치하고 systemd로 실행할 때 사용할 수 있습니다. 수동 실행은 터미널에서 Ctrl+C로 종료하세요.</p>{% endif %}
   </div>
-  {% if poweroff_available %}<a class="button danger" href="{{ url_for('web.developer_poweroff') }}">라즈베리파이 종료…</a>{% endif %}
+  <div class="button-row">
+    {% if program_stop_available %}<a class="button ghost" href="{{ url_for('web.developer_program_stop') }}">프로그램만 종료…</a>{% endif %}
+    {% if poweroff_available %}<a class="button danger" href="{{ url_for('web.developer_poweroff') }}">라즈베리파이 종료…</a>{% endif %}
+  </div>
 </section>
 
 <section class="panel developer-actions">

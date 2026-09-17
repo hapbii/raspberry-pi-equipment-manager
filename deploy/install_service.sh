@@ -14,7 +14,7 @@ for argument in "$@"; do
       echo "사용법: sudo bash deploy/install_service.sh [--allow-mock] [--enable-poweroff] [--check]"
       echo "--allow-mock: 모델 없이 현재 mock 설정으로 웹 확인용 설치"
       echo "--check: 설정과 권한만 확인 (서비스 변경·실행 없음)"
-      echo "--enable-poweroff: 개발자 화면에서 라파 종료 허용 (설치 중에는 종료하지 않음)"
+      echo "--enable-poweroff: 개발자 화면의 라파 종료·프로그램만 종료 허용 (설치 중에는 종료하지 않음)"
       exit 0 ;;
     *) echo "알 수 없는 옵션입니다. --help로 사용법을 확인하세요." >&2; exit 1 ;;
   esac
@@ -39,6 +39,8 @@ UNIT=equipment-manager.service
 TARGET="/etc/systemd/system/$UNIT"
 POWER_TIMER=equipment-manager-poweroff.timer
 POWER_SERVICE=equipment-manager-poweroff.service
+STOP_TIMER=equipment-manager-stop.timer
+STOP_SERVICE=equipment-manager-stop.service
 POWER_RULE=50-equipment-manager-poweroff.rules
 RULE_TARGET="/etc/polkit-1/rules.d/$POWER_RULE"
 if "$ENABLE_POWEROFF"; then
@@ -58,7 +60,7 @@ fi
 
 STAGING_DIR="$(mktemp -d /etc/systemd/system/.equipment-manager-install.XXXXXX)"
 cleanup() {
-  rm -f -- "$STAGING_DIR/$UNIT" "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$POWER_RULE"
+  rm -f -- "$STAGING_DIR/$UNIT" "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$POWER_RULE" "$STAGING_DIR/$STOP_TIMER" "$STAGING_DIR/$STOP_SERVICE"
   rmdir -- "$STAGING_DIR"
 }
 trap cleanup EXIT
@@ -69,10 +71,12 @@ systemd-analyze verify "$STAGING_DIR/$UNIT"
 if "$ENABLE_POWEROFF"; then
   cp -- "$APP_DIR/deploy/$POWER_TIMER" "$STAGING_DIR/$POWER_TIMER"
   cp -- "$APP_DIR/deploy/$POWER_SERVICE" "$STAGING_DIR/$POWER_SERVICE"
+  cp -- "$APP_DIR/deploy/$STOP_TIMER" "$STAGING_DIR/$STOP_TIMER"
+  cp -- "$APP_DIR/deploy/$STOP_SERVICE" "$STAGING_DIR/$STOP_SERVICE"
   runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
     "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
     --user "$APP_USER" --group "$APP_GROUP" --poweroff-rule > "$STAGING_DIR/$POWER_RULE"
-  systemd-analyze verify "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE"
+  systemd-analyze verify "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$STOP_TIMER" "$STAGING_DIR/$STOP_SERVICE"
 fi
 runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
   "$APP_DIR/serve.py" --check "${ALLOW_MOCK[@]}"
@@ -91,7 +95,7 @@ if [[ -f "$TARGET" ]]; then
 fi
 install -m 644 -o root -g root "$STAGING_DIR/$UNIT" "$TARGET"
 if "$ENABLE_POWEROFF"; then
-  for power_file in "$POWER_TIMER" "$POWER_SERVICE" "$POWER_RULE"; do
+  for power_file in "$POWER_TIMER" "$POWER_SERVICE" "$STOP_TIMER" "$STOP_SERVICE" "$POWER_RULE"; do
     if [[ "$power_file" == "$POWER_RULE" ]]; then
       power_target="$RULE_TARGET"
     else
@@ -104,7 +108,7 @@ if "$ENABLE_POWEROFF"; then
     fi
     install -m 644 -o root -g root "$STAGING_DIR/$power_file" "$power_target"
   done
-  # Never enable/start the poweroff timer here: only a confirmed web POST starts it.
+  # Never enable/start either timer here: only a confirmed web POST starts them.
 elif [[ -f "$RULE_TARGET" ]]; then
   # Reinstall without the option revokes this application's OS-level permission.
   power_backup="$(mktemp "${RULE_TARGET}.disabled.XXXXXX")"
@@ -137,5 +141,5 @@ echo "상태 확인: sudo systemctl status $UNIT --no-pager -l"
 echo "이후 .env 수정은 sudo systemctl restart $UNIT 로 반영합니다."
 echo "GitHub 코드는 부팅 시 자동 업데이트하지 않습니다."
 if "$ENABLE_POWEROFF"; then
-  echo "개발자 시스템 화면에서 라파 종료를 요청할 수 있습니다. 실제 종료 시험은 모두 사용을 마친 뒤 진행하세요."
+  echo "개발자 시스템 화면에서 라파 종료 또는 프로그램만 종료를 요청할 수 있습니다. 실제 종료 시험은 모두 사용을 마친 뒤 진행하세요."
 fi

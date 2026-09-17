@@ -75,6 +75,7 @@ class ServiceConfigTestCase(unittest.TestCase):
         self.assertIn("Environment=POWER_OFF_ENABLED=false", self.render(allow_mock=True))
         unit = self.render(allow_mock=True, enable_poweroff=True)
         self.assertIn("Environment=POWER_OFF_ENABLED=true", unit)
+        self.assertIn("Environment=SYSTEMD_SERVICE_MANAGED=true", unit)
         self.assertIn("NoNewPrivileges=true", unit)
         self.assertIn("TimeoutStopSec=45", unit)
         rule = render_poweroff_rule("pi30304")
@@ -88,13 +89,25 @@ class ServiceConfigTestCase(unittest.TestCase):
     def test_poweroff_units_parse_without_starting_any_service(self):
         source = Path(__file__).resolve().parents[1] / "deploy"
         paths = []
-        for name in ("equipment-manager-poweroff.timer", "equipment-manager-poweroff.service"):
+        for name in ("equipment-manager-poweroff.timer", "equipment-manager-poweroff.service",
+                     "equipment-manager-stop.timer", "equipment-manager-stop.service"):
             target = Path(self.temp.name) / name
             shutil.copyfile(source / name, target)
             self.assertNotIn("[Install]", target.read_text().split("#")[0])
             paths.append(str(target))
         result = subprocess.run(["systemd-analyze", "verify", *paths], capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_program_stop_is_repeatable_and_only_stops_the_app(self):
+        source = Path(__file__).resolve().parents[1] / "deploy"
+        timer = (source / "equipment-manager-stop.timer").read_text(encoding="utf-8")
+        service = (source / "equipment-manager-stop.service").read_text(encoding="utf-8")
+        self.assertIn("RemainAfterElapse=no", timer)
+        self.assertIn("OnActiveSec=10s", timer)
+        self.assertIn("ExecStart=/usr/bin/systemctl stop equipment-manager.service", service)
+        self.assertNotIn("poweroff", service)
+        self.assertNotIn("disable", service)
+        self.assertNotIn("[Install]", service)
 
     def test_missing_env_and_invalid_mode_are_rejected(self):
         self.env.write_text("DETECTOR_MODE=typo", encoding="utf-8")

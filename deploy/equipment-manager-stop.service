@@ -1,0 +1,7 @@
+[Unit]
+Description=Stop Equipment Manager without powering off the Raspberry Pi
+
+[Service]
+Type=oneshot
+# Explicit stop suppresses Restart=on-failure; boot enablement is unchanged.
+ExecStart=/usr/bin/systemctl stop equipment-manager.service

@@ -7,7 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from equipment_manager import create_app
-from equipment_manager.power import POWER_TIMER, SYSTEMCTL, poweroff_available, schedule_poweroff
+from equipment_manager.power import (
+    POWER_TIMER, PROGRAM_STOP_TIMER, SYSTEMCTL, poweroff_available,
+    program_stop_available, schedule_poweroff, schedule_program_stop,
+)
 
 
 class PowerTestCase(unittest.TestCase):
@@ -22,6 +25,7 @@ class PowerTestCase(unittest.TestCase):
             "TEACHER_USERNAME": "teacher", "TEACHER_PASSWORD": "teacher-test-password",
             "DEVELOPER_USERNAME": "developer", "DEVELOPER_PASSWORD": "developer-test-password",
             "POWER_OFF_ENABLED": False,
+            "SYSTEMD_SERVICE_MANAGED": False,
         })
         self.addCleanup(self.app.extensions["shutdown_services"])
         self.client = self.app.test_client()
@@ -37,6 +41,11 @@ class PowerTestCase(unittest.TestCase):
     def post(self, **data):
         return self.client.post("/developer/poweroff", data={
             "confirmation": "poweroff", "password": "developer-test-password", **data,
+        })
+
+    def stop_program(self, **data):
+        return self.client.post("/developer/program-stop", data={
+            "confirmation": "program-stop", "password": "developer-test-password", **data,
         })
 
     def test_guest_teacher_and_student_cannot_access_or_shutdown(self):
@@ -57,6 +66,9 @@ class PowerTestCase(unittest.TestCase):
                     self.client.post("/login", data={"student_id": "30304", "password": "student-password"})
                 self.assertEqual(self.client.get("/developer/poweroff").status_code, 302)
                 self.assertEqual(self.post().status_code, 302)
+                self.assertEqual(self.client.get("/developer/program-stop").status_code, 302)
+                self.assertEqual(self.stop_program().status_code, 302)
+                self.assertNotIn("/developer/program-stop", self.client.get("/").get_data(as_text=True))
                 self.assertNotIn("/developer/poweroff", self.client.get("/").get_data(as_text=True))
         self.run.assert_not_called()
 
@@ -126,4 +138,83 @@ class PowerTestCase(unittest.TestCase):
                 self.assertFalse(poweroff_available())
             with patch("equipment_manager.power.Path.is_file", return_value=False):
                 self.assertFalse(poweroff_available())
+        self.run.assert_not_called()
+
+    def test_program_stop_requires_managed_service_and_installed_timer(self):
+        with self.app.app_context(), patch("equipment_manager.power.sys.platform", "linux"), \
+             patch("equipment_manager.power.Path.is_dir", return_value=True), \
+             patch("equipment_manager.power.Path.is_file", return_value=True):
+            self.app.config["POWER_OFF_ENABLED"] = True
+            self.assertFalse(program_stop_available())
+            with self.assertRaises(RuntimeError):
+                schedule_program_stop()
+            self.app.config["SYSTEMD_SERVICE_MANAGED"] = True
+            self.assertTrue(program_stop_available())
+            with patch("equipment_manager.power.Path.is_file", side_effect=lambda: False):
+                self.assertFalse(program_stop_available())
+            with patch("equipment_manager.power.sys.platform", "win32"):
+                self.assertFalse(program_stop_available())
+            self.app.config["POWER_OFF_ENABLED"] = False
+            self.assertFalse(program_stop_available())
+        self.run.assert_not_called()
+
+    def test_program_stop_get_disabled_post_confirmation_password_and_csrf(self):
+        self.login()
+        self.assertEqual(self.client.get("/developer/program-stop").status_code, 200)
+        self.assertEqual(self.stop_program().status_code, 503)
+        with patch("equipment_manager.routes.developer.program_stop_available", return_value=True):
+            self.assertEqual(self.client.get("/developer/program-stop").status_code, 200)
+            self.assertEqual(self.stop_program(confirmation="poweroff").status_code, 400)
+            self.assertEqual(self.stop_program(password="wrong").status_code, 400)
+            self.app.config["CSRF_ENABLED"] = True
+            self.assertEqual(self.stop_program().status_code, 302)
+        self.run.assert_not_called()
+
+    def test_program_stop_uses_only_fixed_timer_and_displays_recovery(self):
+        self.login()
+        self.app.config["CSRF_ENABLED"] = True
+        with self.client.session_transaction() as session:
+            csrf = session["csrf_token"]
+        with patch("equipment_manager.routes.developer.program_stop_available", return_value=True), \
+             patch("equipment_manager.power.program_stop_available", return_value=True):
+            response = self.stop_program(csrf_token=csrf, unit=POWER_TIMER, command="poweroff")
+        self.assertEqual(response.status_code, 202)
+        self.assertIn("sudo systemctl start equipment-manager.service", response.get_data(as_text=True))
+        self.run.assert_called_once_with(
+            [SYSTEMCTL, "--no-ask-password", "start", PROGRAM_STOP_TIMER],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=5, check=False,
+        )
+
+    def test_stop_and_poweroff_share_password_retry_limit(self):
+        self.login()
+        with patch("equipment_manager.routes.developer.program_stop_available", return_value=True), \
+             patch("equipment_manager.routes.developer.poweroff_available", return_value=True):
+            for _ in range(5):
+                self.assertEqual(self.stop_program(password="wrong").status_code, 400)
+            self.assertEqual(self.post().status_code, 429)
+            self.assertEqual(self.stop_program().status_code, 429)
+        self.run.assert_not_called()
+
+    def test_program_stop_command_failures_do_not_claim_success(self):
+        self.login()
+        for failure in (PermissionError("denied"), subprocess.TimeoutExpired("systemctl", 5), None):
+            with self.subTest(failure=failure), \
+                 patch("equipment_manager.routes.developer.program_stop_available", return_value=True), \
+                 patch("equipment_manager.power.program_stop_available", return_value=True):
+                self.run.side_effect = failure
+                self.run.return_value.returncode = 1
+                response = self.stop_program()
+                self.assertEqual(response.status_code, 503)
+                self.assertNotIn("프로그램 종료를 요청했습니다", response.get_data(as_text=True))
+
+    def test_developer_sees_both_buttons_but_old_install_has_no_stop_button(self):
+        self.login()
+        with patch("equipment_manager.routes.developer.program_stop_available", return_value=True), \
+             patch("equipment_manager.routes.developer.poweroff_available", return_value=True):
+            html = self.client.get("/developer").get_data(as_text=True)
+            self.assertIn('href="/developer/program-stop"', html)
+            self.assertIn('href="/developer/poweroff"', html)
+        with patch("equipment_manager.routes.developer.program_stop_available", return_value=False):
+            self.assertNotIn('href="/developer/program-stop"', self.client.get("/developer").get_data(as_text=True))
         self.run.assert_not_called()

@@ -8,7 +8,7 @@ from flask import current_app, flash, g, redirect, render_template, request, url
 from ..auth import RateLimited, take_attempt
 from ..db import get_db
 from ..error_logs import get_error_log_store
-from ..power import poweroff_available, schedule_poweroff
+from ..power import poweroff_available, program_stop_available, schedule_poweroff, schedule_program_stop
 from ..security import constant_time_equal
 from ..system_metrics import current_rss_mb
 from ..vision import DetectionError, get_detection_service
@@ -41,6 +41,7 @@ def developer_page():
         model_exists=model_path.exists(),
         error_log=get_error_log_store().snapshot(),
         poweroff_available=poweroff_available(),
+        program_stop_available=program_stop_available(),
     )
 
 
@@ -73,27 +74,37 @@ def developer_recognition_check():
 @bp.route("/developer/poweroff", methods=["GET", "POST"])
 @developer_required
 def developer_poweroff():
-    available = poweroff_available()
+    return _confirm_stop("poweroff", "poweroff.html", poweroff_available(), schedule_poweroff)
+
+
+@bp.route("/developer/program-stop", methods=["GET", "POST"])
+@developer_required
+def developer_program_stop():
+    return _confirm_stop("program-stop", "program_stop.html", program_stop_available(), schedule_program_stop)
+
+
+def _confirm_stop(action, template, available, schedule):
+    # Both entrypoints enforce developer_required before reaching this helper.
+    def page(*, error=None, scheduled=False, status=200):
+        return render_template(template, available=available, scheduled=scheduled, error=error), status
+
     if request.method == "GET":
-        return render_template("poweroff.html", available=available, scheduled=False)
+        return page()
     if not available:
-        return render_template("poweroff.html", available=False, scheduled=False,
-                               error="종료 기능을 먼저 설치해 주세요."), 503
-    if request.form.get("confirmation") != "poweroff":
-        return render_template("poweroff.html", available=True, scheduled=False,
-                               error="종료 영향 안내를 확인하고 체크해 주세요."), 400
+        return page(error="종료 기능을 먼저 설치하고 서비스로 실행해 주세요.", status=503)
+    if request.form.get("confirmation") != action:
+        return page(error="종료 영향 안내를 확인하고 체크해 주세요.", status=400)
     try:
+        # Shared bucket: switching buttons cannot bypass password retry limits.
         take_attempt("poweroff", g.user["name"], limit=5, seconds=300)
     except RateLimited:
-        return render_template("poweroff.html", available=True, scheduled=False,
-                               error="요청이 너무 많습니다. 5분 뒤 다시 시도해 주세요."), 429
+        return page(error="요청이 너무 많습니다. 5분 뒤 다시 시도해 주세요.", status=429)
     if not constant_time_equal(request.form.get("password", ""), current_app.config["DEVELOPER_PASSWORD"]):
-        return render_template("poweroff.html", available=True, scheduled=False,
-                               error="개발자 비밀번호가 올바르지 않습니다."), 400
+        return page(error="개발자 비밀번호가 올바르지 않습니다.", status=400)
     try:
-        schedule_poweroff()
+        schedule()
     except RuntimeError as exc:
-        current_app.logger.exception("Raspberry Pi shutdown request failed")
-        return render_template("poweroff.html", available=True, scheduled=False, error=str(exc)), 503
-    current_app.logger.warning("Raspberry Pi shutdown timer requested by developer")
-    return render_template("poweroff.html", available=True, scheduled=True), 202
+        current_app.logger.exception("Developer stop request failed: %s", action)
+        return page(error=str(exc), status=503)
+    current_app.logger.warning("Developer stop timer requested: %s", action)
+    return page(scheduled=True, status=202)
