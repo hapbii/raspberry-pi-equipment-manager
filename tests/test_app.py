@@ -60,6 +60,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
         return self.client.get("/api/status").get_json()["inventory"][0]
 
     def scan(self, equipment_id):
+        with self.client.session_transaction() as current_session:
+            logged_in = bool(current_session.get("auth_token"))
+        if not logged_in:
+            self.login_admin()
         response = self.client.post("/api/scans", json={"mock_equipment_id": equipment_id})
         self.assertEqual(response.status_code, 200, response.get_json())
         return response.get_json()["scan"]["token"]
@@ -119,39 +123,38 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertTrue(detection_service.status()["closed"])
         self.assertIsNone(detection_service._detector)
 
-    def test_scan_is_open_and_final_transaction_requires_station_pin(self):
+    def test_scan_requires_login_and_pin_is_removed(self):
+        self.assertEqual(self.client.get("/scan").status_code, 302)
+        self.assertEqual(self.client.post("/api/scans", json={}).status_code, 401)
+        self.assertEqual(self.client.post("/api/transactions", json={}).status_code, 401)
+        self.login_admin()
         page = self.client.get("/scan")
         self.assertEqual(page.status_code, 200)
         page_html = page.get_data(as_text=True)
-        self.assertIn("최종 처리 시 PIN 확인", page_html)
-        self.assertIn('id="station-pin-dialog"', page_html)
-        self.assertIn('data-pin-required="true"', page_html)
+        self.assertNotIn('id="station-pin-dialog"', page_html)
+        self.assertNotIn('data-pin-required', page_html)
         self.assertNotIn("2468", page_html)
 
         legacy_login = self.client.get("/station/login")
         self.assertEqual(legacy_login.status_code, 302)
-        self.assertTrue(legacy_login.location.endswith("/scan"))
+        self.assertTrue(legacy_login.location.endswith("/login"))
 
         token = self.scan(self.first_equipment()["id"])
-        missing = self.transact(token, station_pin=None)
-        self.assertEqual(missing.status_code, 403)
-        self.assertEqual(missing.get_json()["code"], "station_pin_invalid")
-
-        incorrect = self.transact(token, station_pin="000000")
-        self.assertEqual(incorrect.status_code, 403)
-        self.assertIn("PIN이 올바르지", incorrect.get_json()["error"])
-
-        accepted = self.transact(token)
+        accepted = self.transact(token, station_pin=None)
         self.assertEqual(accepted.status_code, 200, accepted.get_json())
 
-    def test_scan_is_open_when_station_auth_is_disabled(self):
+    def test_legacy_station_setting_cannot_bypass_login(self):
         self.app.config["STATION_AUTH_REQUIRED"] = False
-        self.assertEqual(self.client.get("/scan").status_code, 200)
+        self.assertEqual(self.client.get("/scan").status_code, 302)
         token = self.scan(self.first_equipment()["id"])
         response = self.transact(token, station_pin=None)
         self.assertEqual(response.status_code, 200, response.get_json())
 
     def test_scan_form_only_requests_student_and_loan_reason(self):
+        self.login_admin()
+        model = Path(self.temp_dir.name) / "model.pt"
+        model.touch()
+        self.app.config["YOLO_MODEL_PATH"] = str(model)
         for mode in ("mock", "yolo"):
             with self.subTest(mode=mode):
                 self.app.config["DETECTOR_MODE"] = mode
@@ -196,6 +199,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
             _validate_loan_reason(LargeReason("가" * 100_000), "loan")
 
     def test_yolo_result_not_client_equipment_selection_controls_transaction(self):
+        self.login_admin()
         from equipment_manager.vision.types import Detection
 
         item = self.first_equipment()
@@ -232,24 +236,20 @@ class EquipmentManagerTestCase(unittest.TestCase):
         )
         for path in ("/", "/scan", "/admin/login"):
             with self.subTest(path=path):
-                page = self.client.get(path)
+                page = self.client.get(path, follow_redirects=True)
                 self.assertEqual(page.status_code, 200)
                 html = page.get_data(as_text=True)
                 self.assertNotIn("개발용 기본 계정 비밀번호", html)
                 self.assertNotIn("security-warning", html)
 
-    def test_teacher_still_requires_pin_for_loan_and_return(self):
+    def test_teacher_can_loan_and_return_without_pin(self):
         self.login_admin()
-        self.assertIn('data-pin-required="true"', self.client.get("/scan").get_data(as_text=True))
+        self.assertNotIn('station-pin-dialog', self.client.get("/scan").get_data(as_text=True))
         for action in ("loan", "return"):
             with self.subTest(action=action):
                 equipment = self.first_equipment()
                 token = self.scan(equipment["id"])
-                for pin in (None, "wrong"):
-                    rejected = self.transact(token, action=action, station_pin=pin)
-                    self.assertEqual(rejected.status_code, 403)
-                    self.assertEqual(self.first_equipment()["available_qty"], equipment["available_qty"])
-                accepted = self.transact(token, action=action)
+                accepted = self.transact(token, action=action, station_pin=None)
                 self.assertEqual(accepted.status_code, 200, accepted.get_json())
 
     def test_admin_requires_matching_username_and_password(self):
@@ -281,9 +281,9 @@ class EquipmentManagerTestCase(unittest.TestCase):
         with self.client.session_transaction() as current_session:
             self.assertEqual(current_session.get("admin_role"), "teacher")
         invalid_pin = self.client.post("/api/transactions", json={"station_pin": "잘못된PIN"})
-        self.assertEqual(invalid_pin.status_code, 403)
+        self.assertEqual(invalid_pin.status_code, 422)
         malformed_pin = self.client.post("/api/transactions", json={"station_pin": "\ud800"})
-        self.assertEqual(malformed_pin.status_code, 403)
+        self.assertEqual(malformed_pin.status_code, 422)
         self.app.config["CSRF_ENABLED"] = True
         invalid_csrf = self.client.post("/admin/login", data={"csrf_token": "한글토큰"})
         self.assertEqual(invalid_csrf.status_code, 302)
@@ -306,9 +306,9 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(self.client.get("/").status_code, 200)
         scan_page = self.client.get("/scan")
         self.assertEqual(scan_page.status_code, 200)
-        self.assertIn('data-pin-required="false"', scan_page.get_data(as_text=True))
+        self.assertNotIn('station-pin-dialog', scan_page.get_data(as_text=True))
 
-        # Developer access bypasses the final station PIN confirmation.
+        # Authenticated users confirm directly; station PIN is no longer used.
         scan = self.client.post("/api/scans", json={"mock_equipment_id": 1})
         self.assertEqual(scan.status_code, 200, scan.get_json())
         transaction = self.transact(
@@ -323,9 +323,10 @@ class EquipmentManagerTestCase(unittest.TestCase):
         after_logout = self.client.get("/developer")
         self.assertEqual(after_logout.status_code, 302)
         self.assertTrue(after_logout.location.endswith("/admin/login"))
-        self.assertIn('data-pin-required="true"', self.client.get("/scan").get_data(as_text=True))
+        self.assertEqual(self.client.get("/scan").status_code, 302)
 
     def test_only_developer_can_view_and_clear_error_logs(self):
+        self.login_admin()
         marker = "camera-test-error-4821"
         error_log_path = Path(self.app.config["ERROR_LOG_PATH"])
         detection_service = self.app.extensions["detection_service"]
@@ -362,6 +363,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertFalse(error_log_path.exists())
 
     def test_csrf_protects_scan_post(self):
+        self.login_admin()
         self.app.config["CSRF_ENABLED"] = True
         self.client.get("/scan")
         rejected = self.client.post("/api/scans", json={"mock_equipment_id": 1})

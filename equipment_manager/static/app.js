@@ -82,7 +82,11 @@
         const dot = document.querySelector("#device-dot");
         const state = document.querySelector("#device-state");
         dot.className = `status-dot ${data.device.online ? "online" : "offline"}`;
-        state.textContent = data.device.online ? "인식 장치 온라인" : "인식 장치 오프라인";
+        state.textContent = data.device.online ? "서버 온라인" : "서버 응답 지연";
+        if (data.recognition) {
+          document.querySelector("#recognition-title").textContent = data.recognition.title;
+          document.querySelector("#recognition-message").textContent = data.recognition.message;
+        }
         document.querySelector("#last-seen").textContent = `마지막 신호 ${formatDate(data.device.last_seen)}`;
         document.querySelector("#dashboard-updated").textContent = formatDate(data.server_time);
       } catch (error) {
@@ -128,21 +132,49 @@
     const studentInput = document.querySelector("#student-id");
     const reasonInput = document.querySelector("#loan-reason");
     const reasonField = document.querySelector("#loan-reason-field");
-    const recognitionReady = scanApp.dataset.mode === "yolo";
+    const recognitionReady = scanApp.dataset.mode === "yolo" && scanApp.dataset.canScan !== "false";
     const resultLoanPeriod = document.querySelector("#result-loan-period");
     const actionInputs = document.querySelectorAll('input[name="action"]');
-    const pinRequired = scanApp.dataset.pinRequired === "true";
-    const pinDialog = document.querySelector("#station-pin-dialog");
-    const pinForm = document.querySelector("#station-pin-form");
-    const pinInput = document.querySelector("#transaction-station-pin");
-    const pinError = document.querySelector("#station-pin-error");
-    const pinCancelButton = document.querySelector("#station-pin-cancel");
-    const pinConfirmButton = document.querySelector("#station-pin-confirm");
     let scanToken = null;
     let scanDueDate = null;
     let scanLoanPeriodDays = null;
     let saving = false;
     let scanning = false;
+    let expiryTimer = null;
+    let scanDeadline = 0;
+    let scanPageHidden = false;
+    const expiryLabel = document.querySelector("#scan-expiry");
+
+    function clearExpiryTimer() {
+      if (expiryTimer !== null) window.clearTimeout(expiryTimer);
+      expiryTimer = null;
+    }
+
+    function refreshExpiry() {
+      clearExpiryTimer();
+      if (!scanToken || scanPageHidden) return;
+      const remaining = Math.ceil((scanDeadline - Date.now()) / 1000);
+      if (remaining <= 0) {
+        scanToken = null;
+        expiryLabel.textContent = "인식 결과가 만료되었습니다. 다시 인식해 주세요.";
+        if (!saving) showMessage(expiryLabel.textContent);
+        updateControls();
+        return;
+      }
+      expiryLabel.textContent = `확정까지 남은 시간: ${remaining}초`;
+      expiryTimer = window.setTimeout(refreshExpiry, 1000);
+    }
+
+    window.addEventListener("pagehide", () => {
+      scanPageHidden = true;
+      clearExpiryTimer();
+    });
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) {
+        scanPageHidden = false;
+        refreshExpiry();
+      }
+    });
 
     function updateControls() {
       const busy = saving || scanning;
@@ -150,18 +182,15 @@
         element.disabled = busy;
       });
       detectButton.disabled = busy || !recognitionReady;
+      confirmButton.disabled = busy || !scanToken;
       reasonInput.disabled = busy || selectedAction() === "return";
     }
 
     function setSaving(value) {
       saving = value;
-      [pinInput, pinConfirmButton, pinCancelButton].forEach((element) => {
-        if (element) element.disabled = value;
-      });
       updateControls();
       confirmButton.toggleAttribute("aria-busy", value);
       confirmButton.textContent = value ? "저장 중..." : `이 기자재 ${selectedAction() === "loan" ? "대여" : "반납"}하기`;
-      pinConfirmButton.textContent = value ? "확인 중..." : "확인 후 처리";
     }
 
     function selectedAction() {
@@ -200,6 +229,9 @@
     }
 
     function resetResult() {
+      clearExpiryTimer();
+      scanDeadline = 0;
+      expiryLabel.textContent = "";
       scanToken = null;
       scanDueDate = null;
       scanLoanPeriodDays = null;
@@ -211,7 +243,7 @@
       resultLoanPeriod.classList.add("hidden");
       placeholder.classList.remove("hidden");
       message.classList.add("hidden");
-      if (pinDialog?.open) pinDialog.close();
+      updateControls();
     }
 
     detectButton.addEventListener("click", async () => {
@@ -228,7 +260,10 @@
           student_id: studentInput.value.trim(),
           action: selectedAction(),
         });
+        if (scanPageHidden) return;
         scanToken = data.scan.token;
+        const ttl = Date.parse(data.scan.expires_at) - Date.parse(data.server_time);
+        scanDeadline = Date.now() + (Number.isFinite(ttl) ? Math.max(0, ttl) : 0);
         scanDueDate = data.scan.due_date;
         scanLoanPeriodDays = data.scan.loan_period_days;
         document.querySelector("#result-name").textContent = `${data.scan.equipment_name} 기자재입니다.`;
@@ -238,6 +273,7 @@
         placeholder.classList.add("hidden");
         resultPanel.classList.remove("hidden");
         syncLoanPeriodResult();
+        refreshExpiry();
       } catch (error) {
         showMessage(error.message);
       } finally {
@@ -248,18 +284,17 @@
       }
     });
 
-    async function submitTransaction(stationPin = "") {
+    async function submitTransaction() {
       if (saving) return;
+      refreshExpiry();
       const studentId = studentInput.value.trim();
       const action = selectedAction();
       const error = formError();
       if (error) {
-        if (pinDialog?.open) pinDialog.close();
         return showMessage(error);
       }
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
       setSaving(true);
-      pinInput.value = "";
       try {
         const pending = postJson("/api/transactions", {
           scan_token: scanToken,
@@ -267,69 +302,30 @@
           action,
           quantity: 1,
           reason: action === "loan" ? reasonInput.value.trim() : "",
-          station_pin: stationPin,
         });
-        stationPin = "";
         const data = await pending;
         const tx = data.transaction;
         const actionName = tx.action === "loan" ? "대여" : "반납";
         const dueText = tx.due_date ? ` · 반납 예정 ${tx.due_date}` : "";
-        studentInput.value = "";
+        if (!studentInput.readOnly) studentInput.value = "";
         reasonInput.value = "";
         resetResult();
         showMessage(`${tx.equipment_name} ${tx.quantity}개 ${actionName} 처리가 완료되었습니다${dueText}. 현재 사용 가능 ${tx.available_qty}개`, true);
       } catch (error) {
-        if (error.code === "station_pin_invalid" && pinDialog?.open) {
-          pinError.textContent = error.message;
-          pinError.classList.remove("hidden");
-          pinInput.value = "";
-        } else {
-          if (pinDialog?.open) pinDialog.close();
-          showMessage(error.message);
-        }
+        if (error.code === "login_required") resetResult();
+        showMessage(error.message);
       } finally {
         setSaving(false);
-        if (pinDialog.open) pinInput.focus();
       }
     }
 
     confirmButton.addEventListener("click", () => {
       if (saving) return;
+      refreshExpiry();
       const error = formError();
       if (error) return showMessage(error);
       if (!scanToken) return showMessage("먼저 기자재를 인식해 주세요.");
-      if (!pinRequired) {
-        submitTransaction();
-        return;
-      }
-      pinInput.value = "";
-      pinError.classList.add("hidden");
-      pinError.textContent = "";
-      if (!pinDialog.open) pinDialog.showModal();
-      pinInput.focus();
-    });
-
-    pinForm?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      if (saving) return;
-      const stationPin = pinInput.value.trim();
-      if (!stationPin) {
-        pinError.textContent = "스테이션 PIN을 입력해 주세요.";
-        pinError.classList.remove("hidden");
-        pinInput.focus();
-        return;
-      }
-      submitTransaction(stationPin);
-    });
-
-    pinCancelButton?.addEventListener("click", () => pinDialog.close());
-    pinDialog?.addEventListener("cancel", (event) => {
-      if (pinConfirmButton.disabled) event.preventDefault();
-    });
-    pinDialog?.addEventListener("close", () => {
-      pinInput.value = "";
-      pinError.classList.add("hidden");
-      pinError.textContent = "";
+      submitTransaction();
     });
 
     retryButton.addEventListener("click", resetResult);

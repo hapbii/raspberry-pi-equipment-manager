@@ -42,11 +42,6 @@ def validate_deployment(config: Mapping, root: Path, *, allow_mock: bool = False
         errors.append("CSRF_ENABLED: 배포 시 true가 필요합니다.")
     if config.get("DEBUG") or config.get("TESTING"):
         errors.append("DEBUG / TESTING: 배포 시 false가 필요합니다.")
-    if not config.get("STATION_AUTH_REQUIRED", True):
-        errors.append("STATION_AUTH_REQUIRED: 교내 배포 시 true가 필요합니다.")
-    pin = str(config.get("STATION_PIN") or "")
-    if not (6 <= len(pin) <= 12 and pin.isascii() and pin.isdigit()) or len(set(pin)) == 1:
-        errors.append("STATION_PIN: 같은 숫자 반복을 피한 6~12자리 숫자가 필요합니다.")
     mode = config.get("DETECTOR_MODE")
     if mode == "mock":
         if not allow_mock:

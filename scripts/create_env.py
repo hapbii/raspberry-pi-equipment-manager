@@ -18,9 +18,6 @@ developer_password = secrets.token_urlsafe(12)
 developer_username = "developer"
 teacher_password = secrets.token_urlsafe(12)
 teacher_username = "teacher"
-station_pin = f"{secrets.randbelow(1_000_000):06d}"
-while len(set(station_pin)) == 1:
-    station_pin = f"{secrets.randbelow(1_000_000):06d}"
 secret_key = secrets.token_hex(32)
 
 lines = []
@@ -35,8 +32,6 @@ for line in template_path.read_text(encoding="utf-8").splitlines():
         line = f"TEACHER_USERNAME={teacher_username}"
     elif line.startswith("TEACHER_PASSWORD="):
         line = f"TEACHER_PASSWORD={teacher_password}"
-    elif line.startswith("STATION_PIN="):
-        line = f"STATION_PIN={station_pin}"
     lines.append(line)
 
 output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -47,5 +42,5 @@ print(f"개발자 아이디: {developer_username}")
 print(f"개발자 비밀번호: {developer_password}")
 print(f"선생님 아이디: {teacher_username}")
 print(f"선생님 비밀번호: {teacher_password}")
-print(f"최종 대여·반납 처리용 스테이션 PIN: {station_pin}")
+print("학생은 웹사이트 회원가입 후 선생님·개발자의 승인을 받아 사용합니다.")
 print("이 값은 다시 자동 표시되지 않으므로 안전한 곳에 기록하세요.")

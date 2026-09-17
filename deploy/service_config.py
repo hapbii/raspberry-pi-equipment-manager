@@ -26,8 +26,6 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
     python = app_dir / ".venv" / "bin" / "python"
     if not python.is_file() or not os.access(python, os.X_OK):
         raise ValueError(".venv/bin/python이 없습니다. 프로젝트의 가상환경을 먼저 준비하세요.")
-    if not (app_dir / "wsgi.py").is_file():
-        raise ValueError("프로젝트에서 wsgi.py를 찾을 수 없습니다.")
     if not (app_dir / "serve.py").is_file():
         raise ValueError("프로젝트에서 serve.py를 찾을 수 없습니다. 최신 코드를 받아 주세요.")
     mode = (values.get("DETECTOR_MODE", "mock") or "").lower()

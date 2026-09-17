@@ -4,18 +4,20 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-function setup(pinRequired = true, mode = 'yolo') {
+function setup(mode = 'yolo', canScan = true) {
   const elements = new Map();
   const timers = new Map();
   const pageEvents = new Map();
   const requests = [];
   let timerId = 0;
+  let now = Date.now();
+  class TestDate extends Date { static now() { return now; } }
   function element(id) {
     if (!elements.has(id)) {
       const classes = new Set();
       elements.set(id, {
         value: '', disabled: false, open: false,
-        dataset: { pinRequired: String(pinRequired), mode }, events: new Map(),
+        dataset: { canScan: String(canScan), mode }, events: new Map(),
         classList: {
           add: (...names) => names.forEach((name) => classes.add(name)),
           remove: (...names) => names.forEach((name) => classes.delete(name)),
@@ -31,7 +33,7 @@ function setup(pinRequired = true, mode = 'yolo') {
   }
   element('action').value = 'loan';
   const context = {
-    AbortController, Intl, Date, Number, Set,
+    AbortController, Intl, Date: TestDate, Number, Set,
     document: {
       querySelector(selector) {
         if (selector === '#inventory-grid') return null;
@@ -42,7 +44,10 @@ function setup(pinRequired = true, mode = 'yolo') {
       querySelectorAll: (selector) => selector.includes('action') ? [element('action')] : [],
     },
     window: {
-      addEventListener(name, fn) { pageEvents.set(name, fn); },
+      addEventListener(name, fn) {
+        const previous = pageEvents.get(name);
+        pageEvents.set(name, (event = {}) => { previous?.(event); fn(event); });
+      },
       setTimeout(fn) { timers.set(++timerId, fn); return timerId; },
       clearTimeout(id) { timers.delete(id); },
     },
@@ -60,11 +65,86 @@ function setup(pinRequired = true, mode = 'yolo') {
   };
   vm.runInNewContext(readFileSync(join(__dirname, '../equipment_manager/static/app.js'), 'utf8'), context);
   const fire = (id, name) => element(id).events.get(name)({ preventDefault() {} });
-  const answer = (request, data, ok = true) => request.resolve({ ok, json: async () => data });
-  return { element, timers, requests, fire, answer, pageEvents };
+  const answer = (request, data, ok = true) => {
+    if (data.scan) {
+      data.server_time ??= new Date(now).toISOString();
+      data.scan.expires_at ??= new Date(now + 90000).toISOString();
+    }
+    request.resolve({ ok, json: async () => data });
+  };
+  return { element, timers, requests, fire, answer, pageEvents, advance(ms) { now += ms; } };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+async function readyScan(ui) {
+  ui.element('#student-id').value = '30304';
+  ui.element('#loan-reason').value = '실습';
+  const promise = ui.fire('#detect-button', 'click');
+  ui.answer(ui.requests.at(-1), { ok: true, server_time: '2020-01-01T00:00:00Z',
+    scan: { token: 'expiring-scan', expires_at: '2020-01-01T00:01:30Z',
+      equipment_name: 'meter', confidence: 0.9, due_date: null }, votes: 3, frame_count: 3, duration_ms: 100 });
+  await promise;
+}
+
+test('missing model disables detection even in yolo mode', async () => {
+  const ui = setup('yolo', false);
+  assert.equal(ui.element('#detect-button').disabled, true);
+  await ui.fire('#detect-button', 'click');
+  assert.equal(ui.requests.length, 0);
+});
+
+test('countdown handles clock skew and blocks expired confirmation', async () => {
+  const ui = setup();
+  await readyScan(ui);
+  assert.match(ui.element('#scan-expiry').textContent, /90초/);
+  assert.equal(ui.timers.size, 1);
+  ui.advance(91000);
+  [...ui.timers.values()][0]();
+  assert.equal(ui.element('#confirm-button').disabled, true);
+  assert.match(ui.element('#scan-expiry').textContent, /만료/);
+  ui.fire('#confirm-button', 'click');
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.timers.size, 0);
+});
+
+test('retry and page exit clear countdown and restored pages recheck expiry', async () => {
+  const ui = setup();
+  await readyScan(ui);
+  ui.fire('#retry-button', 'click');
+  assert.equal(ui.timers.size, 0);
+  await readyScan(ui);
+  ui.pageEvents.get('pagehide')();
+  assert.equal(ui.timers.size, 0);
+  ui.advance(91000);
+  ui.pageEvents.get('pageshow')({ persisted: true });
+  assert.equal(ui.element('#confirm-button').disabled, true);
+  assert.equal(ui.timers.size, 0);
+});
+
+test('expiry while saving does not discard a successful server response', async () => {
+  const ui = setup();
+  await readyScan(ui);
+  ui.element('#student-id').readOnly = true;
+  ui.fire('#confirm-button', 'click');
+  ui.advance(91000);
+  [...ui.timers.values()][0]();
+  ui.answer(ui.requests[1], { ok: true, transaction: { action: 'loan', equipment_name: 'meter', quantity: 1, available_qty: 2 } });
+  await settle();
+  assert.match(ui.element('#scan-message').textContent, /완료/);
+  assert.equal(ui.element('#student-id').value, '30304');
+  assert.equal(ui.timers.size, 0);
+});
+
+test('expired login clears recognition result and countdown', async () => {
+  const ui = setup();
+  await readyScan(ui);
+  ui.fire('#confirm-button', 'click');
+  ui.answer(ui.requests[1], { ok: false, code: 'login_required', error: '로그인 후 이용해 주세요.' }, false);
+  await settle();
+  assert.equal(ui.element('#confirm-button').disabled, true);
+  assert.equal(ui.timers.size, 0);
+});
 
 test('loan reason is required before detection but return needs only a student', async () => {
   const ui = setup();
@@ -87,11 +167,12 @@ test('loan reason is required before detection but return needs only a student',
   await detecting;
   assert.equal(ui.element('#confirm-button').textContent, '이 기자재 반납하기');
   ui.fire('#confirm-button', 'click');
-  assert.equal(ui.element('#station-pin-dialog').open, true);
+  assert.equal(ui.requests[1].url, '/api/transactions');
+  assert.ok(!('station_pin' in ui.requests[1].body));
 });
 
 test('mock page does not offer manual equipment selection or start recognition', async () => {
-  const ui = setup(true, 'mock');
+  const ui = setup('mock');
   ui.element('#student-id').value = '30304';
   ui.element('#loan-reason').value = '실습';
   assert.equal(ui.element('#detect-button').disabled, true);
@@ -99,8 +180,8 @@ test('mock page does not offer manual equipment selection or start recognition',
   assert.equal(ui.requests.length, 0);
 });
 
-test('developer final confirmation skips the PIN dialog and submits only once', async () => {
-  const ui = setup(false);
+test('final confirmation submits only once without a PIN', async () => {
+  const ui = setup();
   ui.element('#student-id').value = '30304';
   ui.element('#loan-reason').value = '수업 실습';
   const detecting = ui.fire('#detect-button', 'click');
@@ -110,7 +191,6 @@ test('developer final confirmation skips the PIN dialog and submits only once', 
   await detecting;
   ui.fire('#confirm-button', 'click');
   ui.fire('#confirm-button', 'click');
-  assert.equal(ui.element('#station-pin-dialog').open, false);
   assert.equal(ui.requests.length, 2);
   assert.equal(ui.requests[1].url, '/api/transactions');
   assert.ok(!ui.requests[1].body.station_pin);
@@ -127,7 +207,7 @@ test('developer final confirmation skips the PIN dialog and submits only once', 
   assert.equal(ui.element('#result-loan-period').textContent, '');
 });
 
-test('PIN retries send one transaction at a time and release request timers', async () => {
+test('failed transactions can retry once and release timers on success', async () => {
   const ui = setup();
   ui.element('#student-id').value = '30304';
   ui.element('#loan-reason').value = '수업 실습';
@@ -137,22 +217,15 @@ test('PIN retries send one transaction at a time and release request timers', as
     votes: 5, frame_count: 5, duration_ms: 10 });
   await detecting;
   ui.fire('#confirm-button', 'click');
-  assert.equal(ui.element('#station-pin-dialog').open, true);
-  ui.element('#transaction-station-pin').value = 'wrong';
-  ui.fire('#station-pin-form', 'submit');
-  ui.fire('#station-pin-form', 'submit');
+  ui.fire('#confirm-button', 'click');
   assert.equal(ui.requests.length, 2);
-  assert.equal(ui.element('#transaction-station-pin').value, '');
-  ui.answer(ui.requests[1], { ok: false, code: 'station_pin_invalid', error: 'wrong PIN' }, false);
+  ui.answer(ui.requests[1], { ok: false, error: 'temporary failure' }, false);
   await settle();
-  assert.equal(ui.element('#station-pin-dialog').open, true);
-  assert.equal(ui.element('#station-pin-confirm').disabled, false);
-  ui.element('#transaction-station-pin').value = '2468';
-  ui.fire('#station-pin-form', 'submit');
+  assert.equal(ui.element('#confirm-button').disabled, false);
+  ui.fire('#confirm-button', 'click');
   ui.answer(ui.requests[2], { ok: true, transaction: { action: 'loan',
     equipment_name: 'meter', quantity: 1, available_qty: 2 } });
   await settle();
-  assert.equal(ui.element('#station-pin-dialog').open, false);
   assert.equal(ui.timers.size, 0);
 });
 

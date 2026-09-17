@@ -50,9 +50,7 @@ class DeploymentTestCase(unittest.TestCase):
             "TEACHER_PASSWORD": "teacher1234",
             "DEVELOPER_PASSWORD": "short",
             "TEACHER_USERNAME": "developer",
-            "STATION_PIN": "1234",
             "CSRF_ENABLED": False,
-            "STATION_AUTH_REQUIRED": False,
             "DEBUG": True,
             "TESTING": True,
         }
@@ -78,6 +76,16 @@ class DeploymentTestCase(unittest.TestCase):
         self.assertEqual(settings.connection_limit, 32)
         self.assertEqual(settings.max_request_body_size, 1_000_000)
         self.assertFalse(settings.expose_tracebacks)
+
+    def test_legacy_pin_is_not_required_by_new_login_flow(self):
+        validate_deployment(self.config | {"STATION_PIN": "", "STATION_AUTH_REQUIRED": False}, self.root, allow_mock=True)
+
+    def test_legacy_entrypoint_exits_with_migration_instructions(self):
+        source_root = Path(__file__).resolve().parent.parent
+        result = subprocess.run([sys.executable, "-c", "import wsgi"], cwd=source_root,
+                                capture_output=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"python serve.py", result.stderr)
 
     def test_check_command_is_read_only_and_does_not_open_app(self):
         # Use a clean process so dotenv/Config do not inherit the test runner's cache.

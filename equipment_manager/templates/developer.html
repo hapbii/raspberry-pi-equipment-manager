@@ -29,6 +29,15 @@
 </section>
 
 <div class="developer-grid">
+  <section class="panel recognition-status">
+    <h2>{{ recognition.title }}</h2><p>{{ recognition.message }}</p>
+    {% if recognition.checked_at %}<p>마지막 확인: <span data-utc="{{ recognition.checked_at }}">{{ recognition.checked_at }}</span></p>{% endif %}
+    <form method="post" action="{{ url_for('web.developer_recognition_check') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button primary" {% if not recognition.can_scan or inference.busy %}disabled{% endif %}>카메라·모델 실제 점검</button>
+    </form>
+    <p>점검은 실제 카메라를 사용하며 잠시 걸릴 수 있습니다. 대여 기록은 만들지 않습니다.</p>
+  </section>
   <section class="panel">
     <div class="section-title"><h2>실행 설정</h2><p>비밀번호는 표시하지 않습니다.</p></div>
     <dl class="system-list">

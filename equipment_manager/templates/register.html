@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}학생 회원가입{% endblock %}
+{% block content %}
+<section class="auth-wrap"><form class="auth-card" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="eyebrow">STUDENT SIGN UP</p><h1>학생 회원가입</h1>
+  <p>본인 학번과 이름을 입력하세요. 선생님·개발자가 본인 확인 후 승인해야 이용할 수 있습니다.</p>
+  <label for="register-id">학번</label><input id="register-id" name="student_id" inputmode="numeric" pattern="[0-9]{2,20}" maxlength="20" autocomplete="username" required>
+  <label for="register-name">이름</label><input id="register-name" name="name" minlength="2" maxlength="40" autocomplete="name" required>
+  <label for="register-password">비밀번호 (12~128자)</label><input id="register-password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+  <label for="register-confirm">비밀번호 확인</label><input id="register-confirm" name="password_confirm" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+  <p>학번·이름·암호화된 비밀번호 검증값을 계정과 대여 관리에 사용합니다. 다른 사이트의 비밀번호를 재사용하지 마세요.</p>
+  <button class="button primary large" type="submit">학생 계정 가입 신청</button>
+  <a class="auth-back" href="{{ url_for('web.student_login') }}">이미 가입했다면 로그인</a>
+</form></section>
+{% endblock %}

@@ -45,6 +45,8 @@ def init_app_database() -> None:
         )
     schema_path = Path(__file__).with_name("schema.sql")
     db.executescript(schema_path.read_text(encoding="utf-8"))
+    if "owner_key" not in {row[1] for row in db.execute("PRAGMA table_info(scan_sessions)")}:
+        db.execute("ALTER TABLE scan_sessions ADD COLUMN owner_key TEXT")
     _migrate_equipment_loan_periods(db)
     _migrate_transaction_due_dates(db)
     _migrate_transaction_reasons(db)

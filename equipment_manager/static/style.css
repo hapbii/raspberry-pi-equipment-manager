@@ -363,3 +363,6 @@ tbody tr:hover td { background: #f1f6fd; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+.recognition-status { margin-bottom: 20px; }
+.recognition-status p { margin: 8px 0; color: var(--muted, #53657a); }

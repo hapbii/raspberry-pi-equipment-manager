@@ -5,18 +5,20 @@
   <div><p class="eyebrow">SCAN STATION</p><h1>대여·반납 처리</h1></div>
   {% if is_developer %}
   <span class="role-badge developer">개발자 권한으로 접속</span>
-  {% elif station_auth_required %}
-  <span class="access-badge">최종 처리 시 PIN 확인</span>
   {% else %}
-  <span class="access-badge">PIN 없이 사용 중</span>
+  <span class="access-badge">{{ current_user.name }} 로그인 중</span>
   {% endif %}
 </section>
 
-<div class="scan-layout" id="scan-app" data-mode="{{ detector_mode }}" data-pin-required="{{ 'true' if station_auth_required and not is_developer else 'false' }}">
+<section class="panel recognition-status" role="status">
+  <strong>{{ recognition.title }}</strong><p>{{ recognition.message }}</p>
+  {% if recognition.checked_at %}<small>마지막 확인: <span data-utc="{{ recognition.checked_at }}">{{ recognition.checked_at }}</span></small>{% endif %}
+</section>
+<div class="scan-layout" id="scan-app" data-mode="{{ detector_mode }}" data-can-scan="{{ 'true' if recognition.can_scan else 'false' }}">
   <section class="panel scan-form-panel">
     <div class="step-label"><span>1</span> 거래 정보</div>
     <label for="student-id">학번</label>
-    <input id="student-id" maxlength="30" autocomplete="off" inputmode="numeric">
+    <input id="student-id" maxlength="30" autocomplete="off" inputmode="numeric" {% if current_user.role == 'student' %}value="{{ current_user.student_id }}" readonly{% endif %}>
     <fieldset class="action-choice">
       <legend>처리 구분</legend>
       <label><input type="radio" name="action" value="loan" checked><span>대여</span></label>
@@ -26,7 +28,7 @@
       <label for="loan-reason">대여 사유</label>
       <textarea id="loan-reason" rows="3" maxlength="200" required></textarea>
     </div>
-    <button id="detect-button" class="button primary large" type="button" {% if detector_mode != 'yolo' %}disabled{% endif %}>{{ '객체 인식 시작' if detector_mode == 'yolo' else '객체 인식 준비 중' }}</button>
+    <button id="detect-button" class="button primary large" type="button" {% if not recognition.can_scan %}disabled{% endif %}>{{ '객체 인식 시작' if recognition.can_scan else '객체 인식 준비 중' }}</button>
   </section>
 
   <section class="panel result-panel">
@@ -41,6 +43,7 @@
       <p>인식한 기자재 1개를 처리합니다.</p>
       <p>평균 신뢰도 <strong id="result-confidence"></strong> · <span id="result-votes"></span> · <span id="result-duration"></span></p>
       <p id="result-loan-period" class="mode-note hidden"></p>
+      <p id="scan-expiry" class="mode-note" role="timer" aria-live="off"></p>
       <button id="confirm-button" class="button success large" type="button">이 기자재 대여하기</button>
       <button id="retry-button" class="button ghost" type="button">다시 인식</button>
     </div>
@@ -48,19 +51,4 @@
   </section>
 </div>
 
-<dialog class="pin-dialog" id="station-pin-dialog" aria-labelledby="station-pin-title">
-  <form class="pin-dialog-card" id="station-pin-form">
-    <div class="pin-dialog-icon" aria-hidden="true">PIN</div>
-    <p class="eyebrow">FINAL CONFIRMATION</p>
-    <h2 id="station-pin-title">최종 처리 PIN 확인</h2>
-    <p>대여·반납을 저장하려면 스테이션 PIN을 입력하세요.</p>
-    <label for="transaction-station-pin">스테이션 PIN</label>
-    <input id="transaction-station-pin" type="password" maxlength="128" inputmode="numeric" autocomplete="off" placeholder="PIN 입력">
-    <div id="station-pin-error" class="pin-dialog-error hidden" role="alert"></div>
-    <div class="pin-dialog-actions">
-      <button class="button ghost" id="station-pin-cancel" type="button">취소</button>
-      <button class="button primary" id="station-pin-confirm" type="submit">확인 후 처리</button>
-    </div>
-  </form>
-</dialog>
 {% endblock %}

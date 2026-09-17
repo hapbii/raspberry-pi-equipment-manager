@@ -9,8 +9,9 @@ from time import perf_counter
 from flask import current_app
 
 from ..system_metrics import current_rss_mb
+from ..db import utc_now
 from .detector import YoloDetector, build_detector
-from .types import Detection, DetectionError, PreflightResult
+from .types import CameraError, Detection, DetectionError, PreflightResult
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,13 @@ class DetectionService:
         self._closed = False
         self.last_duration_ms: int | None = None
         self.last_error: str | None = None
+        self.check_state = "unchecked"
+        self.checked_at: str | None = None
+
+    def _record_check(self, state: str) -> None:
+        with self._metrics_lock:
+            self.check_state = state
+            self.checked_at = utc_now()
 
     def detect(self, category_hint: str | None = None) -> Detection:
         if self._closed:
@@ -62,8 +70,10 @@ class DetectionService:
                 memory_rss_mb=current_rss_mb(),
             )
             succeeded = True
+            self._record_check("ready")
             return result
         except Exception as exc:
+            self._record_check("camera_error" if isinstance(exc, CameraError) else "inference_error")
             with self._metrics_lock:
                 self.last_error = str(exc)[:500]
             raise
@@ -88,13 +98,23 @@ class DetectionService:
                     logger.warning("Post-inference garbage collection failed", exc_info=True)
 
     def preflight(self) -> PreflightResult:
-        with self._lock:
+        if not self._lock.acquire(blocking=False):
+            raise DetectionError("현재 인식 중입니다. 잠시 후 점검해 주세요.")
+        try:
             if self._closed:
                 raise DetectionError("객체 인식 서비스가 종료되었습니다.")
             detector = self._detector
             if not isinstance(detector, YoloDetector):
                 raise DetectionError("실제 YOLO 모드에서만 사전 점검을 실행할 수 있습니다.")
-            return detector.preflight()
+            try:
+                result = detector.preflight()
+            except Exception as exc:
+                self._record_check("camera_error" if isinstance(exc, CameraError) else "inference_error")
+                raise
+            self._record_check("ready")
+            return result
+        finally:
+            self._lock.release()
 
     def status(self) -> dict:
         with self._metrics_lock:
@@ -108,6 +128,8 @@ class DetectionService:
                 "last_error": self.last_error,
                 "busy": self._lock.locked(),
                 "closed": self._closed,
+                "check_state": self.check_state,
+                "checked_at": self.checked_at,
             }
 
     def close(self) -> None:

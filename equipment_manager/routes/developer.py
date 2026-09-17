@@ -8,7 +8,7 @@ from flask import current_app, flash, redirect, render_template, url_for
 from ..db import get_db
 from ..error_logs import get_error_log_store
 from ..system_metrics import current_rss_mb
-from ..vision import get_detection_service
+from ..vision import DetectionError, get_detection_service
 from . import bp
 from .common import developer_required
 
@@ -50,3 +50,17 @@ def developer_clear_error_logs():
         current_app.logger.exception("Failed to clear the error log")
         flash("오류 로그를 삭제하지 못했습니다. 파일 권한을 확인해 주세요.", "error")
     return redirect(f"{url_for('web.developer_page')}#error-logs")
+
+
+@bp.post("/developer/recognition-check")
+@developer_required
+def developer_recognition_check():
+    try:
+        get_detection_service().preflight()
+        flash("모델·카메라 점검을 통과했습니다.", "success")
+    except DetectionError as exc:
+        flash(f"인식 점검 실패: {exc}", "error")
+    except Exception:
+        current_app.logger.exception("Recognition preflight failed")
+        flash("인식 점검에 실패했습니다. 오류 로그를 확인해 주세요.", "error")
+    return redirect(url_for("web.developer_page"))

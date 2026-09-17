@@ -67,8 +67,8 @@ class ServiceConfigTestCase(unittest.TestCase):
                 render_service(self.app_dir, user, "pi", allow_mock=True)
 
     def test_missing_entrypoint_is_rejected(self):
-        (self.app_dir / "wsgi.py").unlink()
-        with self.assertRaisesRegex(ValueError, "wsgi.py"):
+        (self.app_dir / "serve.py").unlink()
+        with self.assertRaisesRegex(ValueError, "serve.py"):
             self.render(allow_mock=True)
 
     def test_missing_env_and_invalid_mode_are_rejected(self):

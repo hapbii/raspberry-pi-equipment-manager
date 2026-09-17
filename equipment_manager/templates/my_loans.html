@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}내 대여 내역{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">MY LOANS</p><h1>{{ current_user.name }}님의 대여 내역</h1><p>학번 {{ current_user.student_id }} · 본인 기록만 표시됩니다.</p></div>
+<div class="button-row"><a class="button primary" href="{{ url_for('web.scan_page') }}">대여·반납</a><a class="button ghost" href="{{ url_for('web.student_password') }}">비밀번호 변경</a></div></section>
+<section class="panel"><h2>현재 미반납</h2><p>미반납 기록은 반납 예정일 순으로 최대 200건 표시합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>기자재</th><th>수량</th><th>반납 예정일</th></tr></thead><tbody>
+{% for row in outstanding %}<tr><td>{{ row.name }}</td><td>{{ row.remaining_quantity }}</td><td>{{ row.due_date or '미지정' }}</td></tr>
+{% else %}<tr><td colspan="3">대여 중인 기자재가 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><h2>최근 처리 내역</h2><p>최근 100건을 표시합니다.</p><div class="table-wrap"><table><thead><tr><th>기자재</th><th>처리</th><th>수량</th><th>대여 사유</th><th>시각</th><th>상태</th></tr></thead><tbody>
+{% for row in history %}<tr><td>{{ row.name }}</td><td>{{ '대여' if row.action == 'loan' else '반납' }}</td><td>{{ row.quantity }}</td><td>{{ row.reason }}</td><td data-utc="{{ row.created_at }}">{{ row.created_at }}</td><td>{{ '취소됨' if row.reversed_at else '완료' }}</td></tr>
+{% else %}<tr><td colspan="6">처리 내역이 없습니다.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

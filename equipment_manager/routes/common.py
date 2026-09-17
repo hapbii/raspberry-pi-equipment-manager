@@ -3,10 +3,17 @@ from __future__ import annotations
 import secrets
 from functools import wraps
 
-from flask import current_app, flash, jsonify, redirect, request, session, url_for
+from flask import current_app, flash, g, jsonify, redirect, request, session, url_for
 
 from ..security import constant_time_equal
+from ..readiness import recognition_status
+from ..auth import load_user
 from . import bp
+
+
+@bp.before_app_request
+def authenticate_request():
+    load_user()
 
 
 @bp.before_app_request
@@ -17,12 +24,12 @@ def ensure_csrf_token():
 
 @bp.app_context_processor
 def inject_template_context():
-    station_auth_required = current_app.config["STATION_AUTH_REQUIRED"]
-    admin_role = session.get("admin_role")
+    admin_role = g.user["role"] if g.get("user") else None
     return {
         "csrf_token": session.get("csrf_token", ""),
+        "recognition": recognition_status(),
         "detector_mode": current_app.config["DETECTOR_MODE"],
-        "station_auth_required": station_auth_required,
+        "current_user": g.get("user"),
         "admin_authenticated": admin_role in {"teacher", "developer"},
         "admin_role": admin_role,
         "is_developer": admin_role == "developer",
@@ -47,6 +54,8 @@ def csrf_valid() -> bool:
 
 @bp.before_app_request
 def protect_post_requests():
+    if request.path in {"/api/scans", "/api/transactions"} and not g.get("user"):
+        return jsonify(ok=False, code="login_required", error="로그인 후 이용해 주세요."), 401
     if request.method == "POST" and not csrf_valid():
         if is_api_request():
             return jsonify({"ok": False, "error": "요청 보안 토큰이 올바르지 않습니다."}), 400
@@ -55,10 +64,18 @@ def protect_post_requests():
     return None
 
 
+@bp.after_app_request
+def protect_private_responses(response):
+    if g.get("user") or request.path in {"/login", "/register", "/admin/login", "/scan"}:
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if session.get("admin_role") not in {"teacher", "developer"}:
+        if not g.get("user") or g.user["role"] not in {"teacher", "developer"}:
             if is_api_request():
                 return jsonify({"ok": False, "error": "관리자 로그인이 필요합니다."}), 401
             return redirect(url_for("web.admin_login"))
@@ -70,7 +87,7 @@ def admin_required(view):
 def developer_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        role = session.get("admin_role")
+        role = g.user["role"] if g.get("user") else None
         if role != "developer":
             if is_api_request():
                 return jsonify({"ok": False, "error": "개발자 권한이 필요합니다."}), 403

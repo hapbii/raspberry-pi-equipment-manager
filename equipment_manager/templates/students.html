@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}학생 가입 승인{% endblock %}
+{% block content %}
+<section class="page-heading"><div><p class="eyebrow">STUDENT ACCOUNTS</p><h1>학생 가입 승인</h1><p>학번과 이름만으로 자동 본인 확인은 되지 않습니다. 학생 본인을 확인한 뒤 승인하세요.</p></div><a class="button ghost" href="{{ url_for('web.admin_page') }}">기자재 관리</a></section>
+<section class="panel"><form method="get" class="transaction-search"><label for="student-search">학번·이름 검색</label><input id="student-search" name="q" value="{{ query }}" maxlength="40"><button class="button" type="submit">검색</button></form>
+<div class="table-wrap"><table><thead><tr><th>학번</th><th>이름</th><th>상태</th><th>가입 신청</th><th>처리</th></tr></thead><tbody>
+{% for student in students %}<tr><td>{{ student.student_id }}</td><td>{{ student.name }}</td><td>{{ {'pending':'승인 대기','active':'사용 가능','disabled':'사용 중지'}[student.status] }}</td><td data-utc="{{ student.created_at }}">{{ student.created_at }}</td><td>
+<form method="post" action="{{ url_for('web.admin_student_status', account_id=student.id, action='disable' if student.status == 'active' else 'approve') }}" onsubmit="return confirm('본인 확인 후 계정 상태를 변경할까요? 기존 로그인은 종료됩니다.')">
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button small" type="submit">{{ '사용 중지' if student.status == 'active' else '본인 확인 후 승인' }}</button></form>
+<a class="button ghost small" href="{{ url_for('web.admin_student_password', account_id=student.id) }}">비밀번호 재설정</a>
+</td></tr>{% else %}<tr><td colspan="5">학생 계정이 없습니다.</td></tr>{% endfor %}</tbody></table></div>
+<div class="button-row">{% if page > 1 %}<a class="button ghost" href="{{ url_for('web.admin_students', page=page-1, q=query) }}">이전</a>{% endif %}<span>{{ page }}페이지</span>{% if has_next %}<a class="button ghost" href="{{ url_for('web.admin_students', page=page+1, q=query) }}">다음</a>{% endif %}</div></section>
+{% endblock %}

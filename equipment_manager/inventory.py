@@ -126,7 +126,7 @@ def add_equipment(name: str, total_qty: int, loan_period_days: int) -> None:
         raise
 
 
-def create_scan_session(equipment_id: int, confidence: float) -> dict:
+def create_scan_session(equipment_id: int, confidence: float, owner_key: str | None = None) -> dict:
     equipment = get_equipment(equipment_id)
     if not equipment:
         raise InventoryError("등록되지 않은 기자재입니다.")
@@ -139,8 +139,8 @@ def create_scan_session(equipment_id: int, confidence: float) -> dict:
     delete_unreferenced_scan_sessions(db, created.isoformat(timespec="seconds"))
     db.execute(
         """
-        INSERT INTO scan_sessions(token, equipment_id, confidence, created_at, expires_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO scan_sessions(token, equipment_id, confidence, created_at, expires_at, owner_key)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             token,
@@ -148,6 +148,7 @@ def create_scan_session(equipment_id: int, confidence: float) -> dict:
             max(0.0, min(1.0, confidence)),
             created.isoformat(timespec="seconds"),
             expires.isoformat(timespec="seconds"),
+            owner_key,
         ),
     )
     db.commit()
@@ -235,6 +236,7 @@ def commit_transaction(
     action: str,
     quantity: int,
     reason: str = "",
+    owner_key: str | None = None,
 ) -> TransactionResult:
     student_id = _validate_student_id(student_id)
     if action not in {"loan", "return"}:
@@ -257,6 +259,8 @@ def commit_transaction(
         ).fetchone()
         if not scan:
             raise InventoryError("유효하지 않은 인식 결과입니다. 다시 촬영해 주세요.")
+        if owner_key is not None and scan["owner_key"] != owner_key:
+            raise InventoryError("현재 계정의 인식 결과가 아닙니다. 다시 인식해 주세요.")
         if scan["consumed_at"]:
             raise InventoryError("이미 처리된 인식 결과입니다.")
         if datetime.fromisoformat(scan["expires_at"]) < datetime.now(timezone.utc):

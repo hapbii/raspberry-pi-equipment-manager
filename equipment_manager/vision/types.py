@@ -7,6 +7,10 @@ class DetectionError(RuntimeError):
     """사용자에게 안전하게 표시할 수 있는 객체 인식 오류입니다."""
 
 
+class CameraError(DetectionError):
+    """Camera availability failure, distinct from an unrecognized object."""
+
+
 @dataclass(frozen=True)
 class Detection:
     label: str

@@ -1,5 +1,31 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS student_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'active', 'disabled')),
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK(role IN ('student', 'teacher', 'developer')),
+    subject TEXT NOT NULL,
+    credential_tag TEXT NOT NULL,
+    last_seen INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
+
+CREATE TABLE IF NOT EXISTS auth_attempts (
+    bucket TEXT PRIMARY KEY,
+    attempts INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_expiry ON auth_attempts(expires_at);
+
 CREATE TABLE IF NOT EXISTS equipment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -17,7 +43,8 @@ CREATE TABLE IF NOT EXISTS scan_sessions (
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL,
-    consumed_at TEXT
+    consumed_at TEXT,
+    owner_key TEXT
 );
 
 CREATE TABLE IF NOT EXISTS transactions (

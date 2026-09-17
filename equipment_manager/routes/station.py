@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import current_app, jsonify, redirect, render_template, request, url_for
 
-from ..db import set_device_status
+from ..db import set_device_status, utc_now
 from ..hardware import get_indicator
 from ..inventory import (
     InventoryError,
@@ -13,38 +13,44 @@ from ..inventory import (
     get_equipment,
     list_inventory,
 )
-from ..security import constant_time_equal
+from ..auth import login_required, scan_owner, transaction_student_id
 from ..vision import DetectionError, get_detection_service
 from . import bp
 
 
 @bp.route("/station/login", methods=["GET", "POST"])
 def station_login():
-    flash("스테이션 PIN은 최종 대여·반납 처리 단계에서 입력합니다.", "success")
-    return redirect(url_for("web.scan_page"))
+    return redirect(url_for("web.student_login"))
 
 
 @bp.post("/station/logout")
 def station_logout():
-    flash("스테이션 PIN은 거래마다 최종 처리 단계에서 확인합니다.", "success")
+    from ..auth import end_session
+    end_session()
     return redirect(url_for("web.dashboard"))
 
 
 @bp.get("/scan")
+@login_required
 def scan_page():
     return render_template("scan.html")
 
 
 @bp.post("/api/scans")
+@login_required
 def api_create_scan():
     data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="잘못된 요청입니다."), 400
     category_hint = None
     try:
         if str(data.get("action", "")) == "loan":
-            check_student_loan_eligibility(str(data.get("student_id", "")))
+            check_student_loan_eligibility(transaction_student_id(data))
     except InventoryError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 422
     if current_app.config["DETECTOR_MODE"] == "mock":
+        if not current_app.config["TESTING"]:
+            return jsonify(ok=False, error="모의 모드에서는 실제 대여·반납 인식을 할 수 없습니다."), 422
         try:
             equipment_id = int(data.get("mock_equipment_id", 0))
         except (TypeError, ValueError):
@@ -64,13 +70,14 @@ def api_create_scan():
                 f"모델 클래스 '{detection.label}'이 DB 기자재와 일치하지 않습니다. "
                 f"등록된 이름: {configured}. 클래스 별칭 설정도 확인해 주세요: {aliases}"
             )
-        scan = create_scan_session(equipment["id"], detection.confidence)
+        scan = create_scan_session(equipment["id"], detection.confidence, scan_owner())
         set_device_status(None)
         get_indicator().success()
         return jsonify(
             {
                 "ok": True,
                 "scan": scan,
+                "server_time": utc_now(),
                 "votes": detection.votes,
                 "frame_count": detection.frame_count,
                 "duration_ms": detection.duration_ms,
@@ -94,25 +101,11 @@ def api_create_scan():
 
 
 @bp.post("/api/transactions")
+@login_required
 def api_create_transaction():
     data = request.get_json(silent=True) or {}
-    pin_required = (
-        current_app.config["STATION_AUTH_REQUIRED"]
-        and session.get("admin_role") != "developer"
-    )
-    if pin_required:
-        supplied_pin = str(data.get("station_pin") or "")[:128]
-        if not constant_time_equal(supplied_pin, current_app.config["STATION_PIN"]):
-            return (
-                jsonify(
-                    {
-                        "ok": False,
-                        "code": "station_pin_invalid",
-                        "error": "스테이션 PIN이 올바르지 않습니다.",
-                    }
-                ),
-                403,
-            )
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="잘못된 요청입니다."), 400
     try:
         quantity = int(data.get("quantity", 1))
     except (TypeError, ValueError):
@@ -120,10 +113,11 @@ def api_create_transaction():
     try:
         result = commit_transaction(
             scan_token=str(data.get("scan_token", "")),
-            student_id=str(data.get("student_id", "")),
+            student_id=transaction_student_id(data),
             action=str(data.get("action", "")),
             quantity=quantity,
             reason=data.get("reason", ""),
+            owner_key=scan_owner(),
         )
         get_indicator().success()
         return jsonify({"ok": True, "transaction": result.__dict__})

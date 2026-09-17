@@ -17,6 +17,10 @@
   </div>
 </section>
 
+  <section class="panel recognition-status" role="status">
+    <strong id="recognition-title">{{ recognition.title }}</strong>
+    <p id="recognition-message">{{ recognition.message }}</p>
+  </section>
 <div class="content-heading">
   <div><p class="eyebrow">EQUIPMENT</p><h2>기자재별 사용 가능 수량</h2></div>
   <span class="count-badge">총 {{ inventory|length }}종</span>

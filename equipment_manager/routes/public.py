@@ -8,6 +8,7 @@ from ..db import get_db, utc_now
 from ..inventory import list_inventory
 from ..system_metrics import current_rss_mb
 from ..vision import get_detection_service
+from ..readiness import recognition_status
 from . import bp
 
 
@@ -31,6 +32,7 @@ def healthz():
             "database": {"engine": "sqlite", "journal_mode": journal_mode},
             "memory_rss_mb": current_rss_mb(),
             "inference": get_detection_service().status(),
+            "recognition": recognition_status(),
         }
     )
 
@@ -56,5 +58,6 @@ def api_status():
             "inventory": list_inventory(),
             "device": device,
             "inference": get_detection_service().status(),
+            "recognition": recognition_status(),
         }
     )

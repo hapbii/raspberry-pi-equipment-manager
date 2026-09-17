@@ -10,7 +10,6 @@ ACCOUNT_KEYS = (
     "DEVELOPER_PASSWORD",
     "TEACHER_USERNAME",
     "TEACHER_PASSWORD",
-    "STATION_AUTH_REQUIRED",
 )
 
 
@@ -43,7 +42,6 @@ def ensure_role_accounts(env_path: Path) -> tuple[dict[str, str], list[str]]:
         "TEACHER_PASSWORD": current.get(
             "TEACHER_PASSWORD", secrets.token_urlsafe(12)
         ),
-        "STATION_AUTH_REQUIRED": current.get("STATION_AUTH_REQUIRED", "true"),
     }
     missing = [key for key in ACCOUNT_KEYS if key not in current]
     if missing:

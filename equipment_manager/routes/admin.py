@@ -17,6 +17,7 @@ from ..inventory import (
     update_equipment,
 )
 from ..security import constant_time_equal
+from ..auth import RateLimited, begin_session, clear_attempt, end_session, take_attempt
 from . import bp
 from .common import admin_required, developer_required
 
@@ -24,8 +25,14 @@ from .common import admin_required, developer_required
 @bp.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
-        supplied_username = request.form.get("username", "").strip()
+        supplied_username = request.form.get("username", "").strip()[:80]
         supplied = request.form.get("password", "")
+        try:
+            take_attempt("login-ip", request.remote_addr or "local", limit=60)
+            bucket = take_attempt("admin-login", supplied_username)
+        except RateLimited as exc:
+            flash(str(exc), "error")
+            return render_template("login.html"), 429, {"Retry-After": str(exc.retry_after)}
         developer_valid = constant_time_equal(
             supplied_username,
             current_app.config["DEVELOPER_USERNAME"],
@@ -42,8 +49,8 @@ def admin_login():
         )
         role = "developer" if developer_valid else "teacher" if teacher_valid else None
         if role:
-            session["admin_role"] = role
-            session["admin_username"] = supplied_username
+            clear_attempt(bucket)
+            begin_session(role, supplied_username, current_app.config[f"{role.upper()}_PASSWORD"])
             role_name = "개발자 관리자" if role == "developer" else "선생님 관리자"
             flash(f"{role_name}로 로그인했습니다.", "success")
             return redirect(url_for("web.admin_page"))
@@ -53,8 +60,7 @@ def admin_login():
 
 @bp.post("/admin/logout")
 def admin_logout():
-    session.pop("admin_role", None)
-    session.pop("admin_username", None)
+    end_session()
     flash("관리자 로그아웃을 완료했습니다.", "success")
     return redirect(url_for("web.dashboard"))
 

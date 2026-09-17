@@ -24,6 +24,15 @@
         <a class="nav-link {{ 'active' if request.endpoint == 'web.developer_page' else '' }}" href="{{ url_for('web.developer_page') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'web.developer_page' else '' }}>시스템</a>
         {% endif %}
       </nav>
+      <div class="button-row account-nav">
+        {% if current_user %}
+          {% if current_user.role == 'student' %}<a class="button ghost small" href="{{ url_for('web.my_loans') }}">내 대여 내역</a>{% endif %}
+          <form method="post" action="{{ url_for('web.user_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button ghost small" type="submit">로그아웃</button></form>
+        {% else %}
+          <a class="button ghost small" href="{{ url_for('web.student_login') }}">학생 로그인</a>
+          <a class="button primary small" href="{{ url_for('web.student_register') }}">회원가입</a>
+        {% endif %}
+      </div>
     </div>
   </header>
 
@@ -36,7 +45,7 @@
 
   <footer class="site-footer">
     <strong>AI 기반 실습 기자재 관리 시스템</strong>
-    <span>{{ admin_role_label ~ ' 로그인 중' if admin_authenticated else '학교 내부망에서 안전하게 운영하세요.' }}</span>
+    <span>{{ current_user.name ~ ' 로그인 중' if current_user else '학교 내부망에서 안전하게 운영하세요.' }}</span>
   </footer>
 </body>
 </html>

@@ -6,7 +6,7 @@ import time
 from collections.abc import Iterator
 from typing import Protocol
 
-from .types import DetectionError
+from .types import CameraError
 
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ class Picamera2FrameSource:
         try:
             from picamera2 import Picamera2
         except ImportError as exc:
-            raise DetectionError(
+            raise CameraError(
                 "Picamera2가 설치되어 있지 않습니다. Raspberry Pi OS에서 "
                 "sudo apt install python3-picamera2를 실행해 주세요."
             ) from exc
@@ -67,7 +67,7 @@ class Picamera2FrameSource:
                 logger.debug("Camera close after startup failure also failed", exc_info=True)
             if not isinstance(exc, Exception):
                 raise
-            raise DetectionError(f"Picamera2 시작에 실패했습니다: {exc}") from exc
+            raise CameraError(f"Picamera2 시작에 실패했습니다: {exc}") from exc
 
         self._camera = camera
         self._started = True
@@ -80,13 +80,13 @@ class Picamera2FrameSource:
 
     def frames(self, count: int) -> Iterator[object]:
         with self._lock:
-            self._ensure_started()
             try:
+                self._ensure_started()
                 for _ in range(max(1, count)):
                     yield self._camera.capture_array("main")
             except Exception as exc:
                 self.close()
-                raise DetectionError(f"Picamera2 프레임 촬영에 실패했습니다: {exc}") from exc
+                raise CameraError(f"Picamera2 프레임 촬영에 실패했습니다: {exc}") from exc
 
     def close(self) -> None:
         with self._lock:
@@ -138,7 +138,7 @@ class OpenCvFrameSource:
         try:
             import cv2
         except ImportError as exc:
-            raise DetectionError("OpenCV가 설치되어 있지 않습니다.") from exc
+            raise CameraError("OpenCV가 설치되어 있지 않습니다.") from exc
 
         camera = cv2.VideoCapture(self.index)
         try:
@@ -146,7 +146,7 @@ class OpenCvFrameSource:
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
             camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             if not camera.isOpened():
-                raise DetectionError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
+                raise CameraError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
             for _ in range(self.warmup_frames):
                 camera.grab()
         except BaseException:
@@ -160,20 +160,20 @@ class OpenCvFrameSource:
 
     def frames(self, count: int) -> Iterator[object]:
         with self._lock:
-            self._ensure_started()
             try:
+                self._ensure_started()
                 for _ in range(max(1, count)):
                     ok, frame = self._camera.read()
                     try:
                         if not ok:
-                            raise DetectionError("USB 카메라 프레임을 읽지 못했습니다.")
+                            raise CameraError("USB 카메라 프레임을 읽지 못했습니다.")
                         yield frame
                     finally:
                         # Do not keep the old image while allocating the next.
                         frame = None
-            except Exception:
+            except Exception as exc:
                 self.close()
-                raise
+                raise CameraError(f"USB 카메라 촬영에 실패했습니다: {exc}") from exc
 
     def close(self) -> None:
         with self._lock:
@@ -203,4 +203,4 @@ def build_frame_source(config: dict) -> FrameSource:
             width=width,
             height=height,
         )
-    raise DetectionError(f"지원하지 않는 카메라 방식입니다: {backend}")
+    raise CameraError(f"지원하지 않는 카메라 방식입니다: {backend}")
