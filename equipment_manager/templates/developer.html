@@ -87,6 +87,15 @@
 </section>
 
 <section class="panel developer-actions">
+  <div>
+    <h2>라즈베리파이 전원</h2>
+    <p>종료하면 모든 사용자의 사이트 접속과 기자재 인식이 중단됩니다. 모두 사용을 마친 뒤 종료하세요.</p>
+    {% if not poweroff_available %}<p>종료 기능 미설치 또는 비활성화 상태입니다. README 11부의 종료 기능 설치 안내를 확인하세요.</p>{% endif %}
+  </div>
+  {% if poweroff_available %}<a class="button danger" href="{{ url_for('web.developer_poweroff') }}">라즈베리파이 종료…</a>{% endif %}
+</section>
+
+<section class="panel developer-actions">
   <div><h2>빠른 이동</h2><p>개발자 계정은 모든 관리 화면과 대여·반납 화면을 사용할 수 있습니다.</p></div>
   <div class="button-row">
     <a class="button primary" href="{{ url_for('web.admin_page') }}">기자재·거래 관리</a>

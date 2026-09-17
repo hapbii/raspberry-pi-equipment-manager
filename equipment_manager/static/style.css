@@ -31,6 +31,9 @@ body {
 }
 a { color: inherit; }
 button, input, select, textarea { font: inherit; }
+.poweroff-panel { max-width: 760px; margin-inline: auto; }
+.poweroff-confirmation { display: flex; align-items: flex-start; gap: 10px; }
+.poweroff-confirmation input { width: 18px; height: 18px; flex: 0 0 18px; margin-top: 2px; }
 button, a { -webkit-tap-highlight-color: transparent; }
 .skip-link { position: fixed; left: 12px; top: -60px; z-index: 100; padding: 10px 14px; border-radius: 8px; color: white; background: var(--navy); }
 .skip-link:focus { top: 12px; }

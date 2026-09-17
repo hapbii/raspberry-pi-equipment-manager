@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}라즈베리파이 종료{% endblock %}
+{% block content %}
+<section class="panel poweroff-panel">
+  <p class="eyebrow">DEVELOPER ONLY</p>
+  {% if scheduled %}
+  <h1>라즈베리파이 종료를 요청했습니다</h1>
+  <p role="status">약 10초 뒤 운영체제 종료가 시작됩니다. 사이트와 SSH 연결이 끊기는 것은 정상입니다.</p>
+  <p>이 안내는 종료 요청이 접수되었다는 뜻이며, 기기가 완전히 꺼졌음을 확인한 것은 아닙니다. 종료가 완료되기 전에 전원을 뽑지 마세요.</p>
+  <p>다시 사용하려면 종료 완료 후 전원을 다시 연결하세요. 자동 실행을 설치했다면 부팅 후 서버도 시작됩니다.</p>
+  {% else %}
+  <h1>라즈베리파이를 종료할까요?</h1>
+  <p>프로그램만 닫는 것이 아니라 라즈베리파이 운영체제 전체를 종료합니다. 대여·반납과 인식을 모두 마쳤는지 먼저 확인하세요.</p>
+  <p>사이트로 다시 켤 수는 없습니다. 종료 후에는 현장에서 전원을 다시 연결해야 합니다.</p>
+  {% if error %}<p class="flash flash-error" role="alert">{{ error }}</p>{% endif %}
+  {% if available %}
+  <form method="post" action="{{ url_for('web.developer_poweroff') }}" onsubmit="return confirm('모든 사용자의 접속이 끊깁니다. 정말 라즈베리파이를 종료할까요?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="poweroff-password">개발자 비밀번호 재확인</label>
+    <input id="poweroff-password" name="password" type="password" autocomplete="current-password" required>
+    <p><label class="poweroff-confirmation"><input type="checkbox" name="confirmation" value="poweroff" required> 모든 사용자가 이용을 마쳤으며, 라파 전체가 종료되는 것을 확인했습니다.</label></p>
+    <div class="button-row">
+      <a class="button ghost" href="{{ url_for('web.developer_page') }}">취소하고 돌아가기</a>
+      <button class="button danger" type="submit">확인 · 라즈베리파이 종료</button>
+    </div>
+  </form>
+  {% else %}
+  <p>종료 기능이 설치되지 않았거나 비활성화되어 있습니다. README 11부를 확인하세요.</p>
+  <a class="button ghost" href="{{ url_for('web.developer_page') }}">시스템 화면으로</a>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

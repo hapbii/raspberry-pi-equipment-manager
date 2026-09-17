@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from deploy.service_config import render_service
+from deploy.service_config import render_poweroff_rule, render_service
 
 
 class ServiceConfigTestCase(unittest.TestCase):
@@ -70,6 +70,31 @@ class ServiceConfigTestCase(unittest.TestCase):
         (self.app_dir / "serve.py").unlink()
         with self.assertRaisesRegex(ValueError, "serve.py"):
             self.render(allow_mock=True)
+
+    def test_poweroff_requires_explicit_install_option_and_preserves_sandbox(self):
+        self.assertIn("Environment=POWER_OFF_ENABLED=false", self.render(allow_mock=True))
+        unit = self.render(allow_mock=True, enable_poweroff=True)
+        self.assertIn("Environment=POWER_OFF_ENABLED=true", unit)
+        self.assertIn("NoNewPrivileges=true", unit)
+        self.assertIn("TimeoutStopSec=45", unit)
+        rule = render_poweroff_rule("pi30304")
+        self.assertIn('subject.user === "pi30304"', rule)
+        self.assertNotIn("__USER__", rule)
+        for user in ("root", 'pi" || true || "', "pi\nroot"):
+            with self.assertRaises(ValueError):
+                render_poweroff_rule(user)
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("systemd-analyze"), "requires Linux systemd tools")
+    def test_poweroff_units_parse_without_starting_any_service(self):
+        source = Path(__file__).resolve().parents[1] / "deploy"
+        paths = []
+        for name in ("equipment-manager-poweroff.timer", "equipment-manager-poweroff.service"):
+            target = Path(self.temp.name) / name
+            shutil.copyfile(source / name, target)
+            self.assertNotIn("[Install]", target.read_text().split("#")[0])
+            paths.append(str(target))
+        result = subprocess.run(["systemd-analyze", "verify", *paths], capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_env_and_invalid_mode_are_rejected(self):
         self.env.write_text("DETECTOR_MODE=typo", encoding="utf-8")

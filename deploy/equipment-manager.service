@@ -14,10 +14,11 @@ Environment=MALLOC_ARENA_MAX=2
 Environment=OMP_NUM_THREADS=2
 Environment=OPENBLAS_NUM_THREADS=2
 Environment=MKL_NUM_THREADS=2
+Environment=POWER_OFF_ENABLED=__POWER_OFF__
 ExecStart=:__PYTHON__ __SERVER__ __MODE_ARGS__
 Restart=on-failure
 RestartSec=3
-TimeoutStopSec=15
+TimeoutStopSec=45
 MemoryHigh=1300M
 MemoryMax=1600M
 TasksMax=64

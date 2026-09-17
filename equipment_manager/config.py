@@ -108,3 +108,4 @@ class Config:
     MAX_CONTENT_LENGTH = env_int("MAX_CONTENT_LENGTH", 1_000_000)
     AUTH_IDLE_SECONDS = max(60, env_int("AUTH_IDLE_SECONDS", 900))
     AUTH_MAX_SECONDS = max(300, env_int("AUTH_MAX_SECONDS", 28800))
+    POWER_OFF_ENABLED = env_bool("POWER_OFF_ENABLED", False)

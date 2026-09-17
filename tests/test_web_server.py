@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import signal
 import socket
 import threading
 import unittest
@@ -21,6 +22,16 @@ class Application:
 
 
 class WebServerLifecycleTestCase(unittest.TestCase):
+    def test_sigterm_drains_server_and_restores_handler(self):
+        baseline = set(threading.enumerate())
+        previous = signal.getsignal(signal.SIGTERM)
+        with patch.object(TcpWSGIServer, "run", side_effect=lambda: signal.raise_signal(signal.SIGTERM)):
+            with self.assertRaises(SystemExit) as raised:
+                run_web_server(Application(), host="127.0.0.1", port=0)
+        self.assertEqual(raised.exception.code, 0)
+        self.assertEqual(signal.getsignal(signal.SIGTERM), previous)
+        self.assertEqual(set(threading.enumerate()), baseline)
+
     def test_repeated_bind_failures_leave_no_threads_sockets_or_app_references(self):
         baseline = set(threading.enumerate())
         references = []

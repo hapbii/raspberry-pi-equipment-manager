@@ -3,10 +3,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from flask import current_app, flash, redirect, render_template, url_for
+from flask import current_app, flash, g, redirect, render_template, request, url_for
 
+from ..auth import RateLimited, take_attempt
 from ..db import get_db
 from ..error_logs import get_error_log_store
+from ..power import poweroff_available, schedule_poweroff
+from ..security import constant_time_equal
 from ..system_metrics import current_rss_mb
 from ..vision import DetectionError, get_detection_service
 from . import bp
@@ -37,6 +40,7 @@ def developer_page():
         model_path=model_path,
         model_exists=model_path.exists(),
         error_log=get_error_log_store().snapshot(),
+        poweroff_available=poweroff_available(),
     )
 
 
@@ -64,3 +68,32 @@ def developer_recognition_check():
         current_app.logger.exception("Recognition preflight failed")
         flash("인식 점검에 실패했습니다. 오류 로그를 확인해 주세요.", "error")
     return redirect(url_for("web.developer_page"))
+
+
+@bp.route("/developer/poweroff", methods=["GET", "POST"])
+@developer_required
+def developer_poweroff():
+    available = poweroff_available()
+    if request.method == "GET":
+        return render_template("poweroff.html", available=available, scheduled=False)
+    if not available:
+        return render_template("poweroff.html", available=False, scheduled=False,
+                               error="종료 기능을 먼저 설치해 주세요."), 503
+    if request.form.get("confirmation") != "poweroff":
+        return render_template("poweroff.html", available=True, scheduled=False,
+                               error="종료 영향 안내를 확인하고 체크해 주세요."), 400
+    try:
+        take_attempt("poweroff", g.user["name"], limit=5, seconds=300)
+    except RateLimited:
+        return render_template("poweroff.html", available=True, scheduled=False,
+                               error="요청이 너무 많습니다. 5분 뒤 다시 시도해 주세요."), 429
+    if not constant_time_equal(request.form.get("password", ""), current_app.config["DEVELOPER_PASSWORD"]):
+        return render_template("poweroff.html", available=True, scheduled=False,
+                               error="개발자 비밀번호가 올바르지 않습니다."), 400
+    try:
+        schedule_poweroff()
+    except RuntimeError as exc:
+        current_app.logger.exception("Raspberry Pi shutdown request failed")
+        return render_template("poweroff.html", available=True, scheduled=False, error=str(exc)), 503
+    current_app.logger.warning("Raspberry Pi shutdown timer requested by developer")
+    return render_template("poweroff.html", available=True, scheduled=True), 202

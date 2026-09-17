@@ -1,0 +1,9 @@
+// Allow only starting the fixed, root-owned shutdown timer; no arbitrary units.
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "equipment-manager-poweroff.timer" &&
+        action.lookup("verb") === "start" &&
+        subject.user === "__USER__") {
+        return polkit.Result.YES;
+    }
+});

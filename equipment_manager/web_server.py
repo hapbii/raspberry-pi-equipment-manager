@@ -1,6 +1,9 @@
 """Own Waitress resources even when binding or starting workers fails."""
 from __future__ import annotations
 
+import signal
+import threading
+
 from waitress import create_server, wasyncore
 from waitress.task import ThreadedTaskDispatcher
 
@@ -11,6 +14,16 @@ def run_web_server(app, **overrides) -> None:
     options = WAITRESS_OPTIONS | overrides
     channels = {}
     dispatcher = ThreadedTaskDispatcher()
+    main_thread = threading.current_thread() is threading.main_thread()
+    previous_sigterm = None
+    if main_thread:
+        def terminate(signum, frame):
+            # systemd sends SIGTERM on stop/poweroff. Unwind finally blocks,
+            # letting in-flight requests drain before application cleanup.
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            raise SystemExit(0)
+
+        previous_sigterm = signal.signal(signal.SIGTERM, terminate)
     try:
         # Supply our own dispatcher so it remains available on partial startup.
         # Start workers only after all listening sockets have been bound.
@@ -23,4 +36,8 @@ def run_web_server(app, **overrides) -> None:
             dispatcher.shutdown()
         finally:
             # Includes partially initialized listeners, wakeup sockets and clients.
-            wasyncore.close_all(map=channels)
+            try:
+                wasyncore.close_all(map=channels)
+            finally:
+                if main_thread:
+                    signal.signal(signal.SIGTERM, previous_sigterm)

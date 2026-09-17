@@ -1,0 +1,9 @@
+[Unit]
+Description=Delayed shutdown requested by Equipment Manager developer
+
+[Timer]
+OnActiveSec=10s
+AccuracySec=1s
+Unit=equipment-manager-poweroff.service
+
+# Deliberately no [Install]: never enable or start this timer during installation.

@@ -10,11 +10,22 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 
-def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = False) -> str:
+def validate_account(name: str) -> None:
+    if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_.-]*\$?", name) or name == "root":
+        raise ValueError("일반 사용자와 그룹으로 설치해 주세요.")
+
+
+def render_poweroff_rule(user: str) -> str:
+    validate_account(user)
+    template = (Path(__file__).parent / "50-equipment-manager-poweroff.rules").read_text(encoding="utf-8")
+    return template.replace("__USER__", user)
+
+
+def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = False,
+                   enable_poweroff: bool = False) -> str:
     app_dir = app_dir.resolve()
     for name in (user, group):
-        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_.-]*\$?", name) or name == "root":
-            raise ValueError("일반 사용자와 그룹으로 설치해 주세요.")
+        validate_account(name)
     # Spaces, &, $, and % are supported; reject ambiguous unit syntax.
     if any(char in app_dir.as_posix() for char in '\n\r\t\\"'):
         raise ValueError("프로젝트 경로에 줄바꿈, 탭, 역슬래시, 큰따옴표를 사용할 수 없습니다.")
@@ -49,8 +60,9 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
         "__PYTHON__": '"' + python.as_posix().replace("%", "%%") + '"',
         "__SERVER__": '"' + (app_dir / "serve.py").as_posix().replace("%", "%%") + '"',
         "__MODE_ARGS__": "--allow-mock" if mode == "mock" and allow_mock else "",
+        "__POWER_OFF__": "true" if enable_poweroff else "false",
     }
-    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON|SERVER|MODE_ARGS)__", lambda match: replacements[match[0]], template)
+    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON|SERVER|MODE_ARGS|POWER_OFF)__", lambda match: replacements[match[0]], template)
 
 
 def main() -> int:
@@ -59,13 +71,19 @@ def main() -> int:
     parser.add_argument("--user", required=True)
     parser.add_argument("--group", required=True)
     parser.add_argument("--allow-mock", action="store_true")
+    parser.add_argument("--enable-poweroff", action="store_true")
+    parser.add_argument("--poweroff-rule", action="store_true")
     args = parser.parse_args()
     try:
         import waitress  # noqa: F401
     except ImportError:
         print("가상환경에 waitress가 없습니다. 가상환경에서 requirements.txt를 설치하세요.", file=sys.stderr)
         return 1
-    unit = render_service(args.app_dir, args.user, args.group, allow_mock=args.allow_mock)
+    if args.poweroff_rule:
+        sys.stdout.write(render_poweroff_rule(args.user))
+        return 0
+    unit = render_service(args.app_dir, args.user, args.group, allow_mock=args.allow_mock,
+                          enable_poweroff=args.enable_poweroff)
     sys.stdout.write(unit)
     return 0
 
