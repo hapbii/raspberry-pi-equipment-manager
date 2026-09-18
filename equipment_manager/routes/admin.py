@@ -3,8 +3,9 @@ from __future__ import annotations
 import csv
 import io
 
-from flask import current_app, flash, redirect, render_template, request, session, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 
+from ..equipment_settings import change_selected_equipment
 from ..inventory import (
     InventoryError,
     add_equipment,
@@ -95,6 +96,19 @@ def admin_add_equipment():
     except (ValueError, InventoryError) as exc:
         flash(str(exc) or "수량과 대여 기간을 숫자로 입력해 주세요.", "error")
     return redirect(url_for("web.admin_page"))
+
+
+@bp.post("/api/admin/equipment/batch")
+@admin_required
+def admin_batch_equipment():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(ok=False, error="요청 형식이 올바르지 않습니다."), 400
+    try:
+        rows = change_selected_equipment(data.get("action"), data.get("items"))
+    except InventoryError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    return jsonify(ok=True, items=rows)
 
 
 @bp.post("/admin/equipment/<int:equipment_id>")

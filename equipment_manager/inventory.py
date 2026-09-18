@@ -486,52 +486,57 @@ def deactivate_equipment(equipment_id: int) -> None:
     now = utc_now()
     try:
         db.execute("BEGIN IMMEDIATE")
-        equipment = db.execute(
-            "SELECT name FROM equipment WHERE id = ? AND active = 1",
-            (equipment_id,),
-        ).fetchone()
-        if not equipment:
-            raise InventoryError("기자재를 찾을 수 없습니다.")
-        outstanding = int(
-            db.execute(
-                """
-                SELECT COALESCE(SUM(remaining_quantity), 0)
-                FROM active_loans
-                WHERE equipment_id = ? AND remaining_quantity > 0
-                """,
-                (equipment_id,),
-            ).fetchone()[0]
-        )
-        if outstanding > 0:
-            raise InventoryError(
-                f"{equipment['name']}의 미반납 수량 {outstanding}개가 있어 제거할 수 없습니다."
-            )
-        db.execute(
-            "UPDATE equipment SET active = 0, updated_at = ? WHERE id = ?",
-            (now, equipment_id),
-        )
-        db.execute(
-            """
-            DELETE FROM scan_sessions
-            WHERE equipment_id = ? AND consumed_at IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM transactions t
-                  WHERE t.scan_token = scan_sessions.token
-              )
-            """,
-            (equipment_id,),
-        )
-        db.execute(
-            """
-            UPDATE scan_sessions SET consumed_at = ?
-            WHERE equipment_id = ? AND consumed_at IS NULL
-            """,
-            (now, equipment_id),
-        )
+        _deactivate_equipment(db, equipment_id, now)
         db.commit()
     except Exception:
         db.rollback()
         raise
+
+
+def _deactivate_equipment(db: sqlite3.Connection, equipment_id: int, now: str) -> None:
+    """Deactivate inside the caller's transaction, preserving historical scans."""
+    equipment = db.execute(
+        "SELECT name FROM equipment WHERE id = ? AND active = 1",
+        (equipment_id,),
+    ).fetchone()
+    if not equipment:
+        raise InventoryError("기자재를 찾을 수 없습니다.")
+    outstanding = int(
+        db.execute(
+            """
+            SELECT COALESCE(SUM(remaining_quantity), 0)
+            FROM active_loans
+            WHERE equipment_id = ? AND remaining_quantity > 0
+            """,
+            (equipment_id,),
+        ).fetchone()[0]
+    )
+    if outstanding > 0:
+        raise InventoryError(
+            f"{equipment['name']}의 미반납 수량 {outstanding}개가 있어 제거할 수 없습니다."
+        )
+    db.execute(
+        "UPDATE equipment SET active = 0, updated_at = ? WHERE id = ?",
+        (now, equipment_id),
+    )
+    db.execute(
+        """
+        DELETE FROM scan_sessions
+        WHERE equipment_id = ? AND consumed_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM transactions t
+              WHERE t.scan_token = scan_sessions.token
+          )
+        """,
+        (equipment_id,),
+    )
+    db.execute(
+        """
+        UPDATE scan_sessions SET consumed_at = ?
+        WHERE equipment_id = ? AND consumed_at IS NULL
+        """,
+        (now, equipment_id),
+    )
 
 
 def delete_transaction_record(transaction_id: str) -> None:

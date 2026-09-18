@@ -15,8 +15,8 @@
 </section>
 
 <section class="admin-summary" aria-label="관리 요약">
-  <div><span>기자재 종류</span><strong>{{ inventory|length }}</strong><small>등록된 종류</small></div>
-  <div><span>전체 기자재</span><strong>{{ inventory|sum(attribute='total_qty') }}</strong><small>총 보유 수량</small></div>
+  <div><span>기자재 종류</span><strong id="equipment-kind-count">{{ inventory|length }}</strong><small>등록된 종류</small></div>
+  <div><span>전체 기자재</span><strong id="equipment-total-count">{{ inventory|sum(attribute='total_qty') }}</strong><small>총 보유 수량</small></div>
   <div><span>현재 미반납</span><strong>{{ outstanding|sum(attribute='quantity') }}</strong><small>대여 중 수량</small></div>
   <div><span>연체 학생</span><strong>{{ overdue_student_count }}</strong><small>새 대여가 제한된 학번</small></div>
 </section>
@@ -36,21 +36,35 @@
     <label>대여 기간(일)<input type="number" name="loan_period_days" min="0" max="{{ config.MAX_LOAN_DAYS }}" value="{{ config.DEFAULT_LOAN_DAYS }}" required></label>
     <button class="button primary" type="submit">종류 추가</button>
   </form>
+  <div id="equipment-editor" data-endpoint="{{ url_for('web.admin_batch_equipment') }}">
+  <div class="equipment-bulk-toolbar">
+    <label class="equipment-check"><input type="checkbox" id="equipment-select-all" disabled> 전체 선택</label>
+    <span id="equipment-selection-count" aria-live="polite">0개 선택</span>
+    <div class="button-row">
+      <button class="button primary small" type="button" data-bulk-action="update" disabled>선택 항목 수정</button>
+      <button class="button danger small" type="button" data-bulk-action="remove" disabled>선택 항목 삭제</button>
+    </div>
+  </div>
+  <p class="equipment-bulk-help">여러 기자재의 값을 입력한 뒤 체크한 항목만 한 번에 저장하세요. 한 번에 최대 100개이며, 입력하는 수량은 증가분이 아닌 최종 수량입니다.</p>
+  <p id="equipment-edit-message" role="status" aria-live="polite"></p>
+  <noscript>여러 항목을 한 번에 수정하려면 브라우저에서 JavaScript를 허용해 주세요.</noscript>
   <div class="admin-inventory">
     {% for item in inventory %}
-    <form class="inventory-edit" method="post" action="{{ url_for('web.admin_update_equipment', equipment_id=item.id) }}">
+    <form class="inventory-edit" method="post" action="{{ url_for('web.admin_update_equipment', equipment_id=item.id) }}" data-equipment-id="{{ item.id }}" data-original='{{ item|tojson }}'>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <strong>{{ item.name }}</strong>
-      <label>전체<input type="number" name="total_qty" min="0" value="{{ item.total_qty }}" required></label>
-      <label>사용 가능<input type="number" name="available_qty" min="0" value="{{ item.available_qty }}" required></label>
+      <label class="equipment-check"><input class="equipment-select" type="checkbox" aria-label="{{ item.name }} 선택"><strong>{{ item.name }}</strong></label>
+      <label>전체<input type="number" name="total_qty" min="0" max="9999" value="{{ item.total_qty }}" required></label>
+      <label>사용 가능<input type="number" name="available_qty" min="0" max="9999" value="{{ item.available_qty }}" required></label>
       <label>대여 기간(일)<input type="number" name="loan_period_days" min="0" max="{{ config.MAX_LOAN_DAYS }}" value="{{ item.loan_period_days }}" required></label>
       <div class="inventory-actions">
-        <button class="button small" type="submit">수정</button>
-        <button class="button danger small" type="submit" formmethod="post" formaction="{{ url_for('web.admin_remove_equipment', equipment_id=item.id) }}" onclick="return confirm('이 기자재 종류를 제거할까요? 미반납 물품이 있으면 제거되지 않습니다.')">제거</button>
+        <button class="button small" type="submit" data-row-action="update">수정</button>
+        <button class="button danger small" type="submit" data-row-action="remove" formnovalidate formmethod="post" formaction="{{ url_for('web.admin_remove_equipment', equipment_id=item.id) }}" onclick="return confirm('이 기자재 종류를 제거할까요? 미반납 물품이 있으면 제거되지 않습니다.')">제거</button>
       </div>
     </form>
     {% endfor %}
   </div>
+  </div>
+  <script defer src="{{ url_for('static', filename='equipment_editor.js') }}"></script>
 </section>
 
 <section id="outstanding-management" class="panel anchor-section">

@@ -295,6 +295,12 @@ legend { margin-bottom: 7px; color: var(--navy); font-weight: 700; font-size: .8
 .inventory-edit label { margin: 0; font-size: .75rem; }
 .inventory-edit input { margin-top: 3px; padding: 8px; }
 .inventory-actions { display: flex; gap: 6px; }
+.equipment-bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 10px; }
+.equipment-bulk-toolbar .button-row { margin-left: auto; }
+.equipment-check { display: flex; align-items: center; gap: 9px; margin: 0; }
+.equipment-check input { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; padding: 0; }
+.equipment-bulk-help { color: var(--muted); font-size: .82rem; }
+.inventory-edit.equipment-dirty { border-color: #d19b39; background: #fffaf0; }
 .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
 th { padding: 12px 11px; text-align: left; color: white; background: linear-gradient(180deg, #1c355d, var(--navy)); }
