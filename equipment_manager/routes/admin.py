@@ -8,12 +8,14 @@ from flask import current_app, flash, jsonify, redirect, render_template, reques
 from ..equipment_settings import change_selected_equipment
 from ..inventory import (
     InventoryError,
+    OUTSTANDING_PAGE_SIZE,
     add_equipment,
     deactivate_equipment,
     delete_transaction_record,
     list_inventory,
     list_outstanding,
     list_transactions,
+    outstanding_summary,
     reverse_transaction,
     update_equipment,
 )
@@ -70,14 +72,17 @@ def admin_logout():
 @admin_required
 def admin_page():
     query = request.args.get("q", "").strip()[:80]
-    outstanding = list_outstanding()
+    page = max(1, min(request.args.get("loans_page", 1, type=int), 100000))
+    outstanding = list_outstanding(OUTSTANDING_PAGE_SIZE + 1, (page - 1) * OUTSTANDING_PAGE_SIZE)
+    summary = outstanding_summary()
     return render_template(
         "admin.html",
         inventory=list_inventory(),
-        outstanding=outstanding,
-        overdue_student_count=len(
-            {row["student_id"] for row in outstanding if row["overdue"]}
-        ),
+        outstanding=outstanding[:OUTSTANDING_PAGE_SIZE],
+        loans_page=page,
+        loans_has_next=len(outstanding) > OUTSTANDING_PAGE_SIZE,
+        outstanding_quantity=summary["quantity"],
+        overdue_student_count=summary["overdue_student_count"],
         transactions=list_transactions(150, query),
         query=query,
     )

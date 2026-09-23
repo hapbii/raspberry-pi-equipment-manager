@@ -7,10 +7,62 @@ from unittest.mock import patch
 
 from equipment_manager import create_app
 from equipment_manager.db import get_db
-from equipment_manager.inventory import create_scan_session, commit_transaction, list_inventory
+from equipment_manager.inventory import (
+    create_scan_session, commit_transaction, list_inventory, reverse_transaction,
+    update_equipment, InventoryError,
+)
 
 
 class EquipmentBatchTest(unittest.TestCase):
+    def test_cancel_restores_quantity_and_admin_cannot_reintroduce_phantom_loan(self):
+        with self.app.app_context():
+            update_equipment(1, 9, 9, 7)
+            token = create_scan_session(1, .99)["token"]
+            tx = commit_transaction(token, "30304", "loan", 1, "lesson")
+            self.assertEqual(tx.available_qty, 8)
+            reverse_transaction(tx.transaction_id)
+            item = next(row for row in list_inventory() if row["id"] == 1)
+            self.assertEqual((item["total_qty"], item["available_qty"], item["loaned_qty"]), (9, 9, 0))
+            with self.assertRaises(InventoryError):
+                update_equipment(1, 9, 8, 7)
+            self.assertFalse(get_db().in_transaction)
+        self.login()
+        items = [item for item in self.items() if item["id"] == 1]
+        items[0]["available_qty"] = 8
+        self.assertEqual(self.post(items).status_code, 400)
+        with self.app.app_context():
+            self.assertEqual(get_db().execute("SELECT available_qty FROM equipment WHERE id=1").fetchone()[0], 9)
+
+    def test_display_uses_real_loans_and_explicit_repair_preserves_history(self):
+        with self.app.app_context():
+            db = get_db()
+            with db:
+                db.execute("UPDATE equipment SET total_qty=9,available_qty=8 WHERE id=1")
+            item = next(row for row in list_inventory() if row["id"] == 1)
+            self.assertEqual(item["loaned_qty"], 0)
+            self.assertEqual(item["expected_available_qty"], 9)
+            self.assertTrue(item["quantity_mismatch"])
+            update_equipment(1, 9, 9, 7)
+            item = next(row for row in list_inventory() if row["id"] == 1)
+            self.assertFalse(item["quantity_mismatch"])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM transactions").fetchone()[0], 0)
+
+    def test_counts_cannot_erase_real_loans_and_batch_is_atomic(self):
+        self.login()
+        self.transact(1)
+        with self.app.app_context():
+            for total, available in ((0, 0), (3, 3), (10000, 9999)):
+                with self.assertRaises(InventoryError):
+                    update_equipment(1, total, available, 7)
+        items = self.items()
+        for item in items:
+            item["total_qty"] += 1
+            item["available_qty"] += 1
+        items[-1]["available_qty"] -= 1
+        before = self.inventory()
+        self.assertEqual(self.post(items).status_code, 400)
+        self.assertEqual(self.inventory(), before)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -161,3 +213,25 @@ class EquipmentBatchTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.post(items, "remove")
         self.assertEqual(self.inventory(), original)
+
+    def test_interrupt_rolls_back_inside_same_context_before_connection_close(self):
+        from equipment_manager.equipment_settings import change_selected_equipment
+        from equipment_manager.inventory import _deactivate_equipment
+        items = self.items()
+        original = self.inventory()
+        calls = 0
+
+        def interrupt_second(db, item_id, now):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise KeyboardInterrupt
+            _deactivate_equipment(db, item_id, now)
+
+        with self.app.app_context(), patch(
+            "equipment_manager.equipment_settings._deactivate_equipment", interrupt_second
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                change_selected_equipment("remove", items)
+            self.assertFalse(get_db().in_transaction)
+            self.assertEqual(list_inventory(), original)

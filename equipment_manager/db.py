@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -33,6 +34,18 @@ def close_db(_error=None) -> None:
     connection = g.pop("db", None)
     if connection is not None:
         connection.close()
+
+
+@contextmanager
+def immediate_transaction(db: sqlite3.Connection):
+    """Serialize writes and roll back on errors, including process interruption.
+
+    The caller owns the connection; Flask closes it at the context boundary.
+    Do not nest this inside another transaction.
+    """
+    with db:
+        db.execute("BEGIN IMMEDIATE")
+        yield db
 
 
 def init_app_database() -> None:

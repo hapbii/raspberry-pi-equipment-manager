@@ -53,10 +53,12 @@
   const inventoryGrid = document.querySelector("#inventory-grid");
   if (inventoryGrid) {
     let dashboardTimer = null;
-    let dashboardStopped = false;
+    let dashboardStopped = document.hidden;
     let dashboardController = null;
 
     async function refreshDashboard() {
+      dashboardTimer = null;
+      if (dashboardStopped || dashboardController !== null) return;
       const controller = new AbortController();
       dashboardController = controller;
       const timeout = window.setTimeout(() => controller.abort(), 4000);
@@ -66,13 +68,15 @@
           signal: controller.signal,
         });
         const data = await response.json();
-        if (!data.ok) throw new Error(data.error);
+        if (dashboardStopped || controller.signal.aborted) return;
+        if (!response.ok || !data.ok) throw new Error(data.error || "현황을 읽지 못했습니다.");
         data.inventory.forEach((item) => {
           const card = inventoryGrid.querySelector(`[data-equipment-id="${item.id}"]`);
           if (!card) return;
           card.querySelector(".available-number").textContent = item.available_qty;
           card.querySelector(".total-number").textContent = ` / ${item.total_qty}개`;
           card.querySelector(".loaned-number").textContent = item.loaned_qty;
+          card.querySelector(".quantity-warning")?.classList.toggle("hidden", !item.quantity_mismatch);
           card.querySelector(".loan-period-number").textContent = item.loan_period_days;
           card.querySelector(".meter span").style.width = `${item.total_qty ? item.available_qty / item.total_qty * 100 : 0}%`;
           const badge = card.querySelector(".availability-badge");
@@ -90,6 +94,7 @@
         document.querySelector("#last-seen").textContent = `마지막 신호 ${formatDate(data.device.last_seen)}`;
         document.querySelector("#dashboard-updated").textContent = formatDate(data.server_time);
       } catch (error) {
+        if (dashboardStopped) return;
         const dot = document.querySelector("#device-dot");
         dot.className = "status-dot offline";
         document.querySelector("#device-state").textContent = "서버 연결 실패";
@@ -105,17 +110,26 @@
       }
     }
 
-    window.addEventListener("pagehide", () => {
+    function stopDashboard() {
       dashboardStopped = true;
       if (dashboardTimer !== null) window.clearTimeout(dashboardTimer);
+      dashboardTimer = null;
       if (dashboardController !== null) dashboardController.abort();
-    });
+    }
 
+    function resumeDashboard() {
+      if (document.hidden) return;
+      dashboardStopped = false;
+      if (dashboardController === null && dashboardTimer === null) refreshDashboard();
+    }
+
+    window.addEventListener("pagehide", stopDashboard);
     window.addEventListener("pageshow", (event) => {
-      if (event.persisted) {
-        dashboardStopped = false;
-        if (dashboardController === null) refreshDashboard();
-      }
+      if (event.persisted) resumeDashboard();
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopDashboard();
+      else resumeDashboard();
     });
 
     refreshDashboard();

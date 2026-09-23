@@ -33,6 +33,7 @@
     <strong class="available-number">{{ item.available_qty }}</strong><span class="total-number"> / {{ item.total_qty }}개</span>
     <div class="meter"><span style="width: {{ (item.available_qty / item.total_qty * 100) if item.total_qty else 0 }}%"></span></div>
     <p>대여 중 <b class="loaned-number">{{ item.loaned_qty }}</b>개</p>
+    <p class="quantity-warning {{ '' if item.quantity_mismatch else 'hidden' }}">수량 확인 필요 · 관리자에게 문의하세요.</p>
     <p>대여 기간 <b class="loan-period-number">{{ item.loan_period_days }}</b>일</p>
   </article>
   {% else %}

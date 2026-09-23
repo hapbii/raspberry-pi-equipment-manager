@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     expires_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_idle ON auth_sessions(last_seen);
 
 CREATE TABLE IF NOT EXISTS auth_attempts (
     bucket TEXT PRIMARY KEY,
@@ -101,6 +102,9 @@ ON transactions(scan_token);
 
 CREATE INDEX IF NOT EXISTS idx_active_loans_student_due
 ON active_loans(student_id, due_date);
+
+CREATE INDEX IF NOT EXISTS idx_active_loans_equipment_open
+ON active_loans(equipment_id) WHERE remaining_quantity > 0;
 
 CREATE INDEX IF NOT EXISTS idx_scan_sessions_expires
 ON scan_sessions(expires_at);

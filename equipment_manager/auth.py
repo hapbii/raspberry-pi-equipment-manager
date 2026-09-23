@@ -12,7 +12,7 @@ from functools import wraps
 from flask import current_app, g, jsonify, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from .db import get_db, utc_now
+from .db import get_db, immediate_transaction, utc_now
 from .security import constant_time_equal
 
 PASSWORD_METHOD = "pbkdf2:sha256:1000000"
@@ -34,8 +34,7 @@ def take_attempt(scope: str, identity: str, limit=5, seconds=300) -> str:
     bucket = hashlib.sha256(f"{scope}:{identity[:128]}".encode("utf-8", errors="replace")).hexdigest()
     now = int(time.time())
     db = get_db()
-    with db:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         db.execute("DELETE FROM auth_attempts WHERE expires_at <= ?", (now,))
         row = db.execute("SELECT * FROM auth_attempts WHERE bucket = ?", (bucket,)).fetchone()
         if row and row["attempts"] >= limit:
@@ -51,6 +50,22 @@ def clear_attempt(bucket: str) -> None:
     db = get_db()
     with db:
         db.execute("DELETE FROM auth_attempts WHERE bucket = ?", (bucket,))
+
+
+def _delete_expired_sessions(db: sqlite3.Connection, now: int) -> int:
+    return db.execute(
+        "DELETE FROM auth_sessions WHERE expires_at <= ? OR last_seen <= ?",
+        (now, now - current_app.config["AUTH_IDLE_SECONDS"]),
+    ).rowcount
+
+
+def cleanup_expired_auth() -> None:
+    """Prune temporary credentials even when no one logs in again."""
+    now = int(time.time())
+    db = get_db()
+    with db:
+        _delete_expired_sessions(db, now)
+        db.execute("DELETE FROM auth_attempts WHERE expires_at <= ?", (now,))
 
 
 def credential_tag(role: str, subject: str, credential: str) -> str:
@@ -74,8 +89,7 @@ def begin_session(role: str, subject: str, credential: str) -> None:
     now = int(time.time())
     db = get_db()
     with db:
-        db.execute("DELETE FROM auth_sessions WHERE expires_at <= ? OR last_seen <= ?",
-                   (now, now - current_app.config["AUTH_IDLE_SECONDS"]))
+        _delete_expired_sessions(db, now)
         db.execute("INSERT INTO auth_sessions VALUES (?, ?, ?, ?, ?, ?)",
                    (hashlib.sha256(token.encode()).hexdigest(), role, subject,
                     credential_tag(role, subject, credential), now, now + current_app.config["AUTH_MAX_SECONDS"]))

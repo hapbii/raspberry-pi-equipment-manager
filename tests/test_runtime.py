@@ -10,6 +10,33 @@ from equipment_manager.runtime import HeartbeatService
 
 
 class HeartbeatServiceTestCase(unittest.TestCase):
+    def test_cleanup_failure_does_not_skip_other_jobs_or_retain_context(self):
+        from flask import has_app_context
+        app = Flask(__name__)
+        calls = []
+
+        def status():
+            self.assertTrue(has_app_context())
+            calls.append("status")
+
+        def scans():
+            self.assertTrue(has_app_context())
+            calls.append("scans")
+            raise RuntimeError("scan cleanup failure")
+
+        def auth():
+            self.assertTrue(has_app_context())
+            calls.append("auth")
+
+        with patch("equipment_manager.runtime.set_device_status", status), patch(
+            "equipment_manager.runtime.cleanup_expired_scan_sessions", scans
+        ), patch("equipment_manager.runtime.cleanup_expired_auth", auth), self.assertLogs(
+            "equipment_manager.runtime", level="ERROR"
+        ):
+            HeartbeatService._maintain(app)
+        self.assertEqual(calls, ["status", "scans", "auth"])
+        self.assertFalse(has_app_context())
+
     def test_delayed_worker_exit_releases_app_after_stop_timeout(self):
         app = Flask(__name__)
         app.config.update(HEARTBEAT_INTERVAL_SECONDS=5, MEMORY_WARNING_MB=1200)

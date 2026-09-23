@@ -2,3 +2,5 @@
 ultralytics>=8.3,<9
 ncnn>=1.0
 gpiozero>=2.0,<3
+# Keep Picamera2's JPEG extension compatible with a NumPy 2 virtualenv.
+simplejpeg>=1.9,<2

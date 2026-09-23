@@ -41,6 +41,7 @@ def create_app(test_config: dict | None = None) -> Flask:
                 return
             shutdown_complete = True
             atexit.unregister(shutdown_services)
+            interrupted = None
             # Keep logging alive until all other resources have been closed.
             for key, method in (
                 ("heartbeat_service", "stop"),
@@ -57,6 +58,13 @@ def create_app(test_config: dict | None = None) -> Flask:
                             getattr(service, method)()
                 except Exception:
                     app.logger.exception("Failed to close %s service", key)
+                except BaseException as exc:
+                    # A second Ctrl+C must not skip the remaining camera/GPIO/
+                    # log cleanup. Propagate it only after every closer ran.
+                    if interrupted is None:
+                        interrupted = exc
+            if interrupted is not None:
+                raise interrupted
 
     app.extensions["shutdown_services"] = shutdown_services
     try:

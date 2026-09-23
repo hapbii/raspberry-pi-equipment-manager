@@ -96,7 +96,16 @@
       save(event.submitter?.dataset.rowAction || 'update', [row]);
     });
     row.addEventListener('change', refreshSelection);
-    row.addEventListener('input', () => markChanged(row));
+    row.addEventListener('input', event => {
+      if (event.target === row.elements.total_qty) {
+        const original = JSON.parse(row.dataset.original);
+        const total = Number(row.elements.total_qty.value);
+        if (Number.isInteger(total) && total >= original.loaned_qty) {
+          row.elements.available_qty.value = total - original.loaned_qty;
+        }
+      }
+      markChanged(row);
+    });
   });
   bulkButtons.forEach(button => button.addEventListener('click', () => save(button.dataset.bulkAction, selected())));
   window.addEventListener('pagehide', () => controller?.abort());

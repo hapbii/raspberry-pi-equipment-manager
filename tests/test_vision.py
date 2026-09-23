@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import gc
+import weakref
 from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -301,6 +303,54 @@ class DetectionServiceTestCase(unittest.TestCase):
 
 
 class YoloDetectorTestCase(unittest.TestCase):
+    def test_retained_interrupt_tracebacks_do_not_pin_owned_input_frames(self):
+        class InterruptingStream(FakeResultStream):
+            def close(self):
+                raise KeyboardInterrupt
+
+        class Model:
+            predictor = None
+
+            def predict(self, **kwargs):
+                return InterruptingStream()
+
+        class Source:
+            backend_name = "fake-camera"
+
+            def frames(self, count):
+                return self
+
+            def __next__(self):
+                frame = FakeFrame()
+                # A camera-sized buffer makes unintended ownership significant.
+                frame.buffer = bytearray(640 * 480 * 3)
+                self.last_frame = weakref.ref(frame)
+                return frame
+
+            def close(self):
+                raise KeyboardInterrupt
+
+        source = Source()
+        detector = YoloDetector({
+            "YOLO_MODEL_PATH": "unused.pt", "YOLO_IMAGE_SIZE": 320,
+            "YOLO_CONFIDENCE": 0.6, "YOLO_MIN_VOTES": 1,
+            "YOLO_FRAME_COUNT": 1, "YOLO_MAX_DETECTIONS": 5,
+            "INFERENCE_THREADS": 2,
+        }, frame_source=source)
+        detector._model = Model()
+        errors = []
+        for _ in range(100):
+            try:
+                detector.preflight()
+            except KeyboardInterrupt as exc:
+                errors.append(exc)
+            else:
+                self.fail("Expected interrupt")
+            gc.collect()
+            self.assertIsNone(source.last_frame())
+        # Keep the tracebacks alive until all weak-reference checks finish.
+        self.assertEqual(len(errors), 100)
+
     def test_interrupted_result_stream_close_still_clears_predictor_frames(self):
         model = FakeModel()
         stream = FakeResultStream()

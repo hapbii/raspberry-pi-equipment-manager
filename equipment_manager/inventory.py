@@ -8,10 +8,15 @@ from datetime import datetime, timedelta, timezone
 
 from flask import current_app
 
-from .db import delete_unreferenced_scan_sessions, get_db, utc_now
+from .db import delete_unreferenced_scan_sessions, get_db, immediate_transaction, utc_now
 
 
 STUDENT_ID_PATTERN = re.compile(r"^[0-9A-Za-z가-힣_-]{2,30}$")
+_EQUIPMENT_WITH_BALANCE = """
+    SELECT e.*, COALESCE((SELECT SUM(l.remaining_quantity) FROM active_loans l
+        WHERE l.equipment_id = e.id AND l.remaining_quantity > 0), 0) AS loaned_qty
+    FROM equipment e
+"""
 
 
 class InventoryError(ValueError):
@@ -32,22 +37,23 @@ class TransactionResult:
 
 def list_inventory() -> list[dict]:
     rows = get_db().execute(
-        """
-        SELECT id, name, total_qty, available_qty, loan_period_days,
-               total_qty - available_qty AS loaned_qty, updated_at
-        FROM equipment
-        WHERE active = 1
-        ORDER BY name
-        """
+        _EQUIPMENT_WITH_BALANCE + " WHERE e.active = 1 ORDER BY e.name"
     ).fetchall()
-    return [dict(row) for row in rows]
+    return [_inventory_row(row) for row in rows]
+
+
+def _inventory_row(row) -> dict:
+    item = dict(row)
+    item["expected_available_qty"] = item["total_qty"] - item["loaned_qty"]
+    item["quantity_mismatch"] = item["available_qty"] != item["expected_available_qty"]
+    return item
 
 
 def get_equipment(equipment_id: int) -> dict | None:
     row = get_db().execute(
-        "SELECT * FROM equipment WHERE id = ? AND active = 1", (equipment_id,)
+        _EQUIPMENT_WITH_BALANCE + " WHERE e.id = ? AND e.active = 1", (equipment_id,)
     ).fetchone()
-    return dict(row) if row else None
+    return _inventory_row(row) if row else None
 
 
 def find_equipment_by_name(name: str) -> dict | None:
@@ -246,8 +252,7 @@ def commit_transaction(
     reason = _validate_loan_reason(reason, action)
     db = get_db()
     now = utc_now()
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         scan = db.execute(
             """
             SELECT s.*, e.name, e.total_qty, e.available_qty, e.loan_period_days
@@ -354,7 +359,6 @@ def commit_transaction(
                 quantity,
             )
         db.execute("UPDATE scan_sessions SET consumed_at = ? WHERE token = ?", (now, scan_token))
-        db.commit()
         return TransactionResult(
             transaction_id=transaction_id,
             equipment_name=scan["name"],
@@ -365,9 +369,6 @@ def commit_transaction(
             due_date=resolved_due_date,
             reason=reason,
         )
-    except Exception:
-        db.rollback()
-        raise
 
 
 def _allocate_return(
@@ -436,7 +437,24 @@ def list_transactions(limit: int = 100, query: str = "") -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def list_outstanding() -> list[dict]:
+OUTSTANDING_PAGE_SIZE = 100
+
+
+def outstanding_summary() -> dict:
+    """Aggregate in SQLite instead of loading every student's loans in Python."""
+    row = get_db().execute(
+        """
+        SELECT COALESCE(SUM(remaining_quantity), 0) AS quantity,
+               COUNT(DISTINCT CASE WHEN due_date < ? THEN student_id END)
+                   AS overdue_student_count
+        FROM active_loans WHERE remaining_quantity > 0
+        """,
+        (datetime.now().astimezone().date().isoformat(),),
+    ).fetchone()
+    return dict(row)
+
+
+def list_outstanding(limit: int = OUTSTANDING_PAGE_SIZE, offset: int = 0) -> list[dict]:
     today = datetime.now().astimezone().date().isoformat()
     rows = get_db().execute(
         """
@@ -450,9 +468,10 @@ def list_outstanding() -> list[dict]:
         JOIN equipment e ON e.id = l.equipment_id
         WHERE l.remaining_quantity > 0
         GROUP BY l.student_id, l.equipment_id
-        ORDER BY overdue DESC, l.student_id, e.name
+        ORDER BY overdue DESC, l.student_id, e.name, l.equipment_id
+        LIMIT ? OFFSET ?
         """,
-        (today,),
+        (today, max(1, min(limit, OUTSTANDING_PAGE_SIZE + 1)), max(0, offset)),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -463,34 +482,42 @@ def update_equipment(
     available_qty: int,
     loan_period_days: int,
 ) -> None:
-    if total_qty < 0 or available_qty < 0 or available_qty > total_qty:
-        raise InventoryError("수량은 0 이상이며, 사용 가능 수량은 전체 수량을 넘을 수 없습니다.")
     loan_period_days = _validate_loan_period_days(loan_period_days)
     db = get_db()
-    result = db.execute(
-        """
-        UPDATE equipment
-        SET total_qty = ?, available_qty = ?, loan_period_days = ?, updated_at = ?
-        WHERE id = ? AND active = 1
-        """,
-        (total_qty, available_qty, loan_period_days, utc_now(), equipment_id),
-    )
-    if result.rowcount != 1:
-        db.rollback()
-        raise InventoryError("기자재를 찾을 수 없습니다.")
-    db.commit()
+    with immediate_transaction(db):
+        if get_equipment(equipment_id) is None:
+            raise InventoryError("기자재를 찾을 수 없습니다.")
+        _validate_equipment_balance(db, equipment_id, total_qty, available_qty)
+        db.execute(
+            """UPDATE equipment SET total_qty = ?, available_qty = ?,
+                loan_period_days = ?, updated_at = ? WHERE id = ? AND active = 1""",
+            (total_qty, available_qty, loan_period_days, utc_now(), equipment_id),
+        )
+
+
+def _validate_equipment_balance(db, equipment_id, total_qty, available_qty) -> None:
+    """Called under a write lock so loans cannot race an administrator edit."""
+    if any(type(value) is not int or not 0 <= value <= 9999 for value in (total_qty, available_qty)):
+        raise InventoryError("수량은 0~9999 사이의 정수로 입력해 주세요.")
+    outstanding = int(db.execute(
+        "SELECT COALESCE(SUM(remaining_quantity), 0) FROM active_loans WHERE equipment_id = ? AND remaining_quantity > 0",
+        (equipment_id,),
+    ).fetchone()[0])
+    if total_qty < outstanding:
+        raise InventoryError(f"전체 수량은 실제 미반납 수량 {outstanding}개보다 적을 수 없습니다.")
+    expected = total_qty - outstanding
+    if available_qty != expected:
+        raise InventoryError(
+            f"실제 미반납은 {outstanding}개입니다. 전체 {total_qty}개일 때 사용 가능 수량은 "
+            f"{expected}개여야 합니다. 수량을 확인하고 다시 저장해 주세요."
+        )
 
 
 def deactivate_equipment(equipment_id: int) -> None:
     db = get_db()
     now = utc_now()
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         _deactivate_equipment(db, equipment_id, now)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
 
 
 def _deactivate_equipment(db: sqlite3.Connection, equipment_id: int, now: str) -> None:
@@ -541,8 +568,7 @@ def _deactivate_equipment(db: sqlite3.Connection, equipment_id: int, now: str) -
 
 def delete_transaction_record(transaction_id: str) -> None:
     db = get_db()
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         transaction = db.execute(
             "SELECT reversed_at FROM transactions WHERE id = ?",
             (transaction_id,),
@@ -552,17 +578,12 @@ def delete_transaction_record(transaction_id: str) -> None:
         if not transaction["reversed_at"]:
             raise InventoryError("기자재 수량 보호를 위해 거래를 먼저 취소한 뒤 삭제해 주세요.")
         db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
 
 
 def reverse_transaction(transaction_id: str, reversed_by: str = "admin") -> None:
     db = get_db()
     now = utc_now()
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         row = db.execute(
             """
             SELECT t.*, e.total_qty, e.available_qty
@@ -631,7 +652,3 @@ def reverse_transaction(transaction_id: str, reversed_by: str = "admin") -> None
                 "DELETE FROM active_loans WHERE loan_transaction_id = ?",
                 (transaction_id,),
             )
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise

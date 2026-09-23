@@ -18,6 +18,29 @@ from scripts.memory_soak_test import run_memory_check
 
 
 class LifecycleTestCase(unittest.TestCase):
+    def test_interrupted_shutdown_still_closes_all_remaining_services(self):
+        logger = logging.getLogger("equipment_manager")
+        original_handlers = list(logger.handlers)
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app({
+                "TESTING": True, "HEARTBEAT_ENABLED": False, "DETECTOR_MODE": "mock",
+                "DATABASE": str(Path(directory) / "test.db"),
+                "ERROR_LOG_PATH": str(Path(directory) / "errors.log"),
+            })
+            heartbeat, detector, indicator = Mock(), Mock(), Mock()
+            heartbeat.stop.side_effect = KeyboardInterrupt
+            detector.close.side_effect = SystemExit(2)
+            app.extensions.update(heartbeat_service=heartbeat, detection_service=detector,
+                                  status_indicator=indicator)
+            with self.assertRaises(KeyboardInterrupt):
+                app.extensions["shutdown_services"]()
+            indicator.close.assert_called_once_with()
+            detector.close.assert_called_once_with()
+            self.assertEqual(logger.handlers, original_handlers)
+            self.assertNotIn("error_log_store", app.extensions)
+            app.extensions["shutdown_services"]()
+            heartbeat.stop.assert_called_once_with()
+
     def test_repeated_interrupted_diagnostics_release_apps_and_log_handlers(self):
         logger = logging.getLogger("equipment_manager")
         original_handlers = list(logger.handlers)

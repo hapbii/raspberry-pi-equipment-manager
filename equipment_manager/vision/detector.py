@@ -5,6 +5,7 @@ import logging
 import os
 from collections import Counter, defaultdict
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
 
@@ -122,7 +123,24 @@ class YoloDetector:
                 try:
                     self._clear_predictor_frame_references(model)
                 finally:
-                    boxes = result = result_stream = None
+                    # A retained error traceback must not pin our input image.
+                    frame = boxes = result = result_stream = None
+
+    @contextmanager
+    def _camera_frames(self, count: int):
+        """Close a suspended camera iterator on success, failure or interruption."""
+        frames: Iterator[object] | None = self.frame_source.frames(count)
+        try:
+            yield frames
+        finally:
+            try:
+                close = getattr(frames, "close", None)
+                if close is not None:
+                    close()
+            except Exception:
+                logger.debug("Camera frame iterator close failed", exc_info=True)
+            finally:
+                frames = close = None
 
     @staticmethod
     def _clear_predictor_frame_references(model) -> None:
@@ -146,28 +164,22 @@ class YoloDetector:
         votes: Counter[str] = Counter()
         confidence_sums: dict[str, float] = defaultdict(float)
         processed_frames = 0
-        frame_iterator: Iterator[object] | None = self.frame_source.frames(self.frame_count)
-
         try:
-            for frame in frame_iterator:
-                processed_frames += 1
-                try:
-                    prediction = self._predict_best(frame)
-                    if prediction is not None:
-                        label, score = prediction
-                        votes[label] += 1
-                        confidence_sums[label] += score
-                finally:
-                    del frame
+            with self._camera_frames(self.frame_count) as frame_iterator:
+                for frame in frame_iterator:
+                    processed_frames += 1
+                    try:
+                        prediction = self._predict_best(frame)
+                        if prediction is not None:
+                            label, score = prediction
+                            votes[label] += 1
+                            confidence_sums[label] += score
+                    finally:
+                        del frame
 
-                if self._winner_is_decided(votes, processed_frames):
-                    break
+                    if self._winner_is_decided(votes, processed_frames):
+                        break
         finally:
-            if frame_iterator is not None and hasattr(frame_iterator, "close"):
-                try:
-                    frame_iterator.close()
-                except Exception:
-                    logger.debug("Camera frame iterator close failed", exc_info=True)
             frame_iterator = None
 
         if not votes:
@@ -209,18 +221,13 @@ class YoloDetector:
 
         started = perf_counter()
         self._load_model()
-        frame_iterator: Iterator[object] | None = self.frame_source.frames(1)
         frame = None
         try:
-            frame = next(frame_iterator)
-            height, width = frame.shape[:2]
-            prediction = self._predict_best(frame)
+            with self._camera_frames(1) as frame_iterator:
+                frame = next(frame_iterator)
+                height, width = frame.shape[:2]
+                prediction = self._predict_best(frame)
         finally:
-            if hasattr(frame_iterator, "close"):
-                try:
-                    frame_iterator.close()
-                except Exception:
-                    logger.debug("Preflight frame iterator close failed", exc_info=True)
             frame = None
             frame_iterator = None
         gc.collect()

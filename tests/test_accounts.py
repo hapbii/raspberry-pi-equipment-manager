@@ -9,10 +9,33 @@ from unittest.mock import patch
 
 from equipment_manager import create_app
 from equipment_manager.db import get_db
-from equipment_manager.auth import take_attempt
+from equipment_manager.auth import cleanup_expired_auth, take_attempt
 
 
 class AccountsTestCase(unittest.TestCase):
+    def test_background_cleanup_preserves_live_sessions_and_account_history(self):
+        with self.app.app_context():
+            db = get_db()
+            now = int(time.time())
+            idle = self.app.config["AUTH_IDLE_SECONDS"]
+            with db:
+                db.execute("DELETE FROM auth_sessions")
+                db.execute("DELETE FROM auth_attempts")
+                db.executemany("INSERT INTO auth_sessions VALUES (?, 'teacher', 'teacher', 'tag', ?, ?)", [
+                    ("absolute-expired", now, now),
+                    ("idle-expired", now - idle, now + 5000),
+                    ("live", now, now + 5000),
+                ])
+                db.executemany("INSERT INTO auth_attempts VALUES (?, 1, ?)", [
+                    ("old", now), ("live", now + 300),
+                ])
+            with patch("equipment_manager.auth.time.time", return_value=now):
+                for _ in range(10):
+                    cleanup_expired_auth()
+            self.assertEqual([row[0] for row in db.execute("SELECT token_hash FROM auth_sessions")], ["live"])
+            self.assertEqual([row[0] for row in db.execute("SELECT bucket FROM auth_attempts")], ["live"])
+            self.assertFalse(db.in_transaction)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

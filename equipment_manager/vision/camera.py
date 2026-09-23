@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class FrameSource(Protocol):
+    """Frames use BGR channel order, ready for OpenCV/Ultralytics."""
     backend_name: str
 
     def frames(self, count: int) -> Iterator[object]: ...
@@ -52,6 +53,7 @@ class Picamera2FrameSource:
         camera = Picamera2()
         try:
             config = camera.create_preview_configuration(
+                # Picamera2's RGB888 byte layout is BGR (not RGB).
                 main={"size": (self.width, self.height), "format": "RGB888"},
                 buffer_count=self.buffer_count,
                 queue=False,

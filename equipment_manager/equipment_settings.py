@@ -1,8 +1,11 @@
 """Bounded, atomic equipment edits with stale-screen protection."""
 from __future__ import annotations
 
-from .db import get_db, utc_now
-from .inventory import InventoryError, _deactivate_equipment, _validate_loan_period_days
+from .db import get_db, immediate_transaction, utc_now
+from .inventory import (
+    InventoryError, _deactivate_equipment, _validate_loan_period_days,
+    _validate_equipment_balance, get_equipment,
+)
 
 
 FIELDS = ("total_qty", "available_qty", "loan_period_days", "updated_at")
@@ -40,8 +43,7 @@ def change_selected_equipment(action: str, items) -> list[dict]:
 
     db = get_db()
     result = []
-    try:
-        db.execute("BEGIN IMMEDIATE")
+    with immediate_transaction(db):
         now = utc_now()
         for item in items:
             row = db.execute("SELECT * FROM equipment WHERE id = ? AND active = 1", (item["id"],)).fetchone()
@@ -52,12 +54,11 @@ def change_selected_equipment(action: str, items) -> list[dict]:
             if action == "remove":
                 _deactivate_equipment(db, item["id"], now)
             else:
+                _validate_equipment_balance(db, item["id"], item["total_qty"], item["available_qty"])
                 db.execute("""UPDATE equipment SET total_qty = ?, available_qty = ?,
                            loan_period_days = ?, updated_at = ? WHERE id = ?""",
                            (item["total_qty"], item["available_qty"], item["loan_period_days"], now, item["id"]))
-            result.append(dict(db.execute("SELECT * FROM equipment WHERE id = ?", (item["id"],)).fetchone()))
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
+            result.append(get_equipment(item["id"]) if action == "update" else dict(
+                db.execute("SELECT * FROM equipment WHERE id = ?", (item["id"],)).fetchone()
+            ))
     return result

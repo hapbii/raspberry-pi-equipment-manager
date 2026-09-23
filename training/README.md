@@ -1,5 +1,7 @@
 # YOLO 데이터셋 준비
 
+라파 카메라로 촬영해서 PC의 labelImg에서 작업하려면 [촬영·PC 복사·labelImg 상세 안내](PHOTO_CAPTURE.md)를 먼저 보세요. `best.pt` 없이 사진을 촬영할 수 있습니다.
+
 권장 폴더 구조:
 
 ```text

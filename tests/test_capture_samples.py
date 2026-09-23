@@ -6,7 +6,7 @@ import weakref
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.capture_samples import capture_samples
+from scripts.capture_samples import capture_manual, capture_samples, _save_frame
 
 
 class Frame:
@@ -106,6 +106,48 @@ class CaptureSamplesTestCase(unittest.TestCase):
         self.assertEqual(self.capture(), 0)
         self.assertEqual(self.cv2.converted, [])
         self.assertTrue(all(ref() is None for ref in self.source.references))
+
+    def test_picamera_bgr_pixels_are_saved_without_swapping_channels(self):
+        pixels = bytearray([0, 0, 255])  # Red in the BGR layout of RGB888.
+        seen = []
+        self.cv2.imwrite = lambda path, frame, options: seen.append(bytes(frame)) or True
+        _save_frame("picamera2", self.cv2, pixels, self.output / "red.jpg")
+        self.assertEqual(seen, [bytes([0, 0, 255])])
+        self.assertEqual(self.cv2.converted, [])
+
+    def test_manual_capture_does_not_retain_images_while_waiting_for_input(self):
+        answers = iter([""] * 100 + ["q"])
+        def answer(prompt):
+            self.assertTrue(all(ref() is None for ref in self.source.references))
+            return next(answers)
+        with patch("builtins.input", answer):
+            self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 200, 0), 0)
+        self.assertEqual(self.cv2.saved, 100)
+        self.assertEqual(self.source.events.count("iterator-close"), 100)
+        self.assertEqual(self.source.events[-1], "camera-close")
+
+    def test_manual_usb_discards_queued_frames_without_saving_them(self):
+        self.source.backend_name = "opencv"
+        with patch("builtins.input", return_value=""):
+            self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 1, 0), 0)
+        self.assertEqual(len(self.source.references), 4)
+        self.assertEqual(self.cv2.saved, 1)
+        self.assertTrue(all(ref() is None for ref in self.source.references))
+
+    def test_manual_quit_eof_and_interrupt_close_camera_without_capture(self):
+        for exception in (EOFError, KeyboardInterrupt):
+            source = FrameSource()
+            with patch("builtins.input", side_effect=exception):
+                code = capture_manual(source, self.cv2, self.output, "meter", 2, 0)
+            self.assertEqual(code, 0 if exception is EOFError else 130)
+            self.assertEqual(source.events, ["camera-close"])
+        self.assertEqual(self.cv2.saved, 0)
+
+    def test_manual_save_failure_closes_iterator_and_camera(self):
+        self.cv2.succeed = False
+        with patch("builtins.input", return_value=""):
+            self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 1, 0), 1)
+        self.assertEqual(self.source.events, ["iterator-close", "camera-close"])
 
     def test_startup_interrupt_closes_camera_and_returns_cancelled_status(self):
         with patch("scripts.capture_samples.time.sleep", side_effect=KeyboardInterrupt):

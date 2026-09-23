@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 
+from .auth import cleanup_expired_auth
 from .db import cleanup_expired_scan_sessions, set_device_status
 from .system_metrics import current_rss_mb
 
@@ -46,9 +47,7 @@ class HeartbeatService:
                 app = self._app
                 if app is None:
                     return
-                with app.app_context():
-                    set_device_status()
-                    cleanup_expired_scan_sessions()
+                self._maintain(app)
                 rss = current_rss_mb()
                 if rss is not None and rss >= self.memory_warning_mb:
                     logger.warning(
@@ -60,3 +59,14 @@ class HeartbeatService:
                 logger.exception("Heartbeat update failed")
             finally:
                 app = None
+
+    @staticmethod
+    def _maintain(app) -> None:
+        # Each task owns its DB context. A failed cleanup cannot strand a
+        # transaction/connection or prevent the other maintenance tasks.
+        for task in (set_device_status, cleanup_expired_scan_sessions, cleanup_expired_auth):
+            try:
+                with app.app_context():
+                    task()
+            except Exception:
+                logger.exception("Background maintenance failed: %s", task.__name__)
