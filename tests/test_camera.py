@@ -95,6 +95,31 @@ class OpenCvFrameSourceTestCase(unittest.TestCase):
 
 
 class Picamera2FrameSourceTestCase(unittest.TestCase):
+    def test_capture_timeout_cancels_pending_job_before_stop_and_close(self):
+        camera = Mock()
+        camera.capture_array.side_effect = TimeoutError()
+        source = Picamera2FrameSource(640, 480)
+        source._camera, source._started = camera, True
+        with self.assertRaisesRegex(DetectionError, "5초"):
+            next(source.frames(1))
+        camera.capture_array.assert_called_once_with("main", wait=5.0)
+        self.assertEqual([call[0] for call in camera.mock_calls],
+                         ["capture_array", "cancel_all_and_flush", "stop", "close"])
+        self.assertIsNone(source._camera)
+
+    def test_capture_interrupt_cancels_pending_job_before_caller_closes(self):
+        camera = Mock()
+        camera.capture_array.side_effect = KeyboardInterrupt()
+        source = Picamera2FrameSource(640, 480)
+        source._camera, source._started = camera, True
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                next(source.frames(1))
+        finally:
+            source.close()
+        self.assertEqual([call[0] for call in camera.mock_calls],
+                         ["capture_array", "cancel_all_and_flush", "stop", "close"])
+
     def test_interrupted_stop_still_closes_camera(self):
         camera = Mock()
         camera.stop.side_effect = KeyboardInterrupt

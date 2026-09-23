@@ -85,7 +85,29 @@ class Picamera2FrameSource:
             try:
                 self._ensure_started()
                 for _ in range(max(1, count)):
-                    yield self._camera.capture_array("main")
+                    frame = None
+                    try:
+                        try:
+                            # A disconnected sensor can otherwise block a web
+                            # worker and prevent camera shutdown indefinitely.
+                            frame = self._camera.capture_array("main", wait=5.0)
+                        except BaseException as exc:
+                            # Timed-out Picamera2 jobs remain queued. Cancel them
+                            # before stop() so the stop job cannot get stuck behind
+                            # a capture that will never receive a frame.
+                            try:
+                                self._camera.cancel_all_and_flush()
+                            except Exception:
+                                logger.debug("Camera job cancellation failed", exc_info=True)
+                            if isinstance(exc, TimeoutError):
+                                raise CameraError(
+                                    "카메라가 5초 동안 영상을 보내지 않았습니다. "
+                                    "촬영을 종료하고 전원을 끈 뒤 카메라 케이블 연결을 확인하세요."
+                                ) from exc
+                            raise
+                        yield frame
+                    finally:
+                        frame = None
             except Exception as exc:
                 self.close()
                 raise CameraError(f"Picamera2 프레임 촬영에 실패했습니다: {exc}") from exc
