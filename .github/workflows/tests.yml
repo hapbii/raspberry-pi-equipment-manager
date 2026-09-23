@@ -26,6 +26,6 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
       - name: Check browser request lifecycle
-        run: node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipment_editor.cjs tests/test_poweroff_policy.cjs
+        run: node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipment_editor.cjs tests/test_poweroff_policy.cjs tests/test_capture_preview.cjs
       - name: Check equipment editor syntax
         run: node --check equipment_manager/static/equipment_editor.js

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>학습 사진 촬영</title>
+  <link rel="stylesheet" href="/assets/preview.css">
+  <script src="/assets/preview.js" defer></script>
+</head>
+<body>
+  <main id="capture-app" data-token="{{ token }}" data-limit="{{ limit }}">
+    <header><span class="eyebrow">YOLO DATASET · CAMERA</span><h1>화면을 보면서 촬영하기</h1>
+      <p>기자재의 각도와 위치를 바꾸고, 손을 치운 뒤 촬영하세요.</p></header>
+    <div class="camera"><img id="preview" alt="라즈베리파이 카메라 실시간 화면" hidden>
+      <span class="badge">LIVE · 저용량 미리보기</span></div>
+    <section class="controls" aria-label="사진 촬영">
+      <div><span class="eyebrow">현재 촬영 종류</span><h2>{{ class_name }}</h2></div>
+      <div class="counter"><strong id="saved">0</strong> / {{ limit }}장</div>
+      <button id="capture" type="button" disabled>사진 촬영</button>
+    </section>
+    <p id="status" role="status" aria-live="polite">카메라 화면을 연결하는 중입니다…</p>
+    <p class="hint">미리보기는 초당 최대 약 5회 갱신됩니다. 사진은 버튼을 누른 후 새로 촬영한 원본 해상도로 라파에 저장됩니다.</p>
+    <details><summary>저장 위치와 종료 방법</summary>
+      <p class="path">{{ output_dir }}</p>
+      <p>종료하려면 라파 SSH 터미널에서 Ctrl+C를 누르세요. 창을 닫기만 하면 촬영 프로그램은 종료되지 않습니다. 저장한 사진은 유지됩니다.</p>
+      <p>사진을 PC로 옮기는 방법은 training/PHOTO_CAPTURE.md의 5부를 확인하세요.</p>
+    </details>
+  </main>
+</body>
+</html>

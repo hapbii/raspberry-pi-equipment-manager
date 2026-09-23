@@ -35,7 +35,10 @@ def main() -> int:
     parser.add_argument("class_name", type=safe_class_name, help="예: multimeter")
     parser.add_argument("--count", type=int, default=200, help="촬영 장수")
     parser.add_argument("--interval", type=float, default=0.5, help="사진 사이 대기 시간(초)")
-    parser.add_argument("--manual", action="store_true", help="엔터로 한 장씩 촬영, q로 종료 (SSH 가능)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--manual", action="store_true", help="엔터로 한 장씩 촬영, q로 종료 (SSH 가능)")
+    mode.add_argument("--preview", action="store_true", help="PC 브라우저에서 실시간 화면을 보며 버튼으로 촬영 (SSH 터널)")
+    parser.add_argument("--preview-port", type=int, default=8081, help="미리보기 포트 (기본 8081)")
     parser.add_argument("--delay", type=float, default=1.0, help="수동 촬영에서 엔터 후 대기 시간(초)")
     parser.add_argument("--backend", choices=("picamera2", "opencv", "usb"), help="이번 촬영에만 카메라 방식 지정")
     parser.add_argument("--camera-index", type=int, help="USB 카메라 번호 (보통 0)")
@@ -46,6 +49,8 @@ def main() -> int:
         parser.error("촬영 장수는 1 이상, 대기 시간은 유한한 0 이상의 숫자로 입력하세요.")
     if args.camera_index is not None and args.camera_index < 0:
         parser.error("USB 카메라 번호는 0 이상이어야 합니다.")
+    if not 1024 <= args.preview_port <= 65535:
+        parser.error("미리보기 포트는 1024~65535 범위여야 합니다.")
     count, interval = args.count, args.interval
     # Separate sessions prevent overwrites and allow train/val splits by shoot.
     session_name = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
@@ -66,6 +71,16 @@ def main() -> int:
         raise SystemExit("OpenCV가 필요합니다: sudo apt install python3-opencv") from exc
 
     source = build_frame_source(config)
+    if args.preview:
+        from scripts.capture_preview import run_preview
+
+        def save_preview_photo(frame, index):
+            try:
+                return _save_numbered_frame(source, cv2, frame, output_dir, args.class_name, index, count)
+            finally:
+                frame = None
+
+        return run_preview(source, cv2, save_preview_photo, args.class_name, count, output_dir, args.preview_port)
     if args.manual:
         return capture_manual(source, cv2, output_dir, args.class_name, count, args.delay)
     return capture_samples(source, cv2, output_dir, args.class_name, count, interval)
@@ -120,6 +135,7 @@ def _save_numbered_frame(source, cv2, frame, output_dir, class_name, index, coun
         path = output_dir / f"{class_name}_{timestamp}_{index:04d}.jpg"
         _save_frame(source.backend_name, cv2, frame, path)
         print(f"{index:04d}/{count}: {path.name}")
+        return path
     finally:
         frame = None
 
