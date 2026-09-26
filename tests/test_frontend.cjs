@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-function setup(mode = 'yolo', canScan = true) {
+function setup(mode = 'yolo', canScan = true, ignoreAbort = false) {
   const elements = new Map();
   const timers = new Map();
   const pageEvents = new Map();
@@ -56,6 +56,7 @@ function setup(mode = 'yolo', canScan = true) {
         const request = { url, body: JSON.parse(options.body), resolve };
         requests.push(request);
         options.signal.addEventListener('abort', () => {
+          if (ignoreAbort) return;
           const error = new Error('aborted');
           error.name = 'AbortError';
           reject(error);
@@ -240,5 +241,39 @@ test('page exit and request timeout release pending scan timers and controls', a
     await detecting;
     assert.equal(ui.timers.size, 0);
     assert.equal(ui.element('#detect-button').disabled, false);
+  }
+});
+
+test('page exit immediately clears deadline and rejects a late scan after restore', async () => {
+  const ui = setup('yolo', true, true);
+  ui.element('#student-id').value = '30304';
+  ui.element('#loan-reason').value = '실습';
+  const detecting = ui.fire('#detect-button', 'click');
+  ui.pageEvents.get('pagehide')();
+  assert.equal(ui.timers.size, 0);
+  ui.pageEvents.get('pageshow')({ persisted: true });
+  ui.answer(ui.requests[0], { ok: true, scan: { token: 'stale', confidence: 0.9,
+    equipment_name: 'old camera result', due_date: null }, votes: 1, frame_count: 1, duration_ms: 1 });
+  await detecting;
+  assert.equal(ui.element('#confirm-button').disabled, true);
+  assert.equal(ui.element('#result-name').textContent, '');
+  assert.equal(ui.timers.size, 0);
+  await readyScan(ui);
+  assert.equal(ui.element('#confirm-button').disabled, false);
+});
+
+test('repeated scan interruption releases deadline and re-enables detection', async () => {
+  const ui = setup();
+  ui.element('#student-id').value = '30304';
+  ui.element('#loan-reason').value = '실습';
+  for (let index = 0; index < 100; index++) {
+    const detecting = ui.fire('#detect-button', 'click');
+    assert.equal(ui.timers.size, 1);
+    ui.pageEvents.get('pagehide')();
+    assert.equal(ui.timers.size, 0);
+    ui.pageEvents.get('pageshow')({ persisted: true });
+    await detecting;
+    assert.equal(ui.element('#detect-button').disabled, false);
+    assert.equal(ui.element('#confirm-button').disabled, true);
   }
 });

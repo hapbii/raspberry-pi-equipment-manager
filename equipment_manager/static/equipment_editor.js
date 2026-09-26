@@ -9,6 +9,7 @@
   const rows = () => [...editor.querySelectorAll('.inventory-edit')];
   let busy = false;
   let controller = null;
+  let requestTimeout = null;
   const selected = () => rows().filter(row => row.querySelector('.equipment-select').checked);
   const announce = (text, error = false) => {
     message.textContent = text;
@@ -50,7 +51,7 @@
     editor.querySelectorAll('input, button').forEach(input => { input.disabled = true; });
     announce('선택 항목을 처리하고 있습니다…');
     controller = new AbortController();
-    const timeout = window.setTimeout(() => controller?.abort(), 30000);
+    requestTimeout = window.setTimeout(() => controller?.abort(), 30000);
     try {
       const response = await fetch(editor.dataset.endpoint, {
         method: 'POST', signal: controller.signal,
@@ -58,6 +59,11 @@
         body: JSON.stringify({ action, items }),
       });
       const data = await response.json();
+      if (controller.signal.aborted) {
+        const error = new Error('Request interrupted');
+        error.name = 'AbortError';
+        throw error;
+      }
       if (!response.ok || !data.ok) {
         if (response.status >= 500) throw new Error('서버 응답을 확인하지 못했습니다. 다른 탭에서 반영 여부를 확인한 뒤 다시 시도하세요.');
         throw new Error(data.error || '저장하지 못했습니다. 입력값은 유지됩니다.');
@@ -77,7 +83,8 @@
         ? '처리 결과를 확인하지 못했습니다. 입력값은 유지됩니다. 중복 요청 전에 다른 탭에서 반영 여부를 확인하세요.'
         : error.message, true);
     } finally {
-      window.clearTimeout(timeout);
+      window.clearTimeout(requestTimeout);
+      requestTimeout = null;
       controller = null;
       busy = false;
       editor.querySelectorAll('input, button').forEach(input => { input.disabled = false; });
@@ -108,7 +115,11 @@
     });
   });
   bulkButtons.forEach(button => button.addEventListener('click', () => save(button.dataset.bulkAction, selected())));
-  window.addEventListener('pagehide', () => controller?.abort());
+  window.addEventListener('pagehide', () => {
+    window.clearTimeout(requestTimeout);
+    requestTimeout = null;
+    controller?.abort();
+  });
   window.addEventListener('beforeunload', event => {
     if (busy || rows().some(row => row.classList.contains('equipment-dirty'))) {
       event.preventDefault();

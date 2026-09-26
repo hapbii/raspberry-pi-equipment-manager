@@ -19,7 +19,7 @@ if __name__ == "__main__":
 sys.path.insert(0, str(ROOT))
 
 from equipment_manager.config import Config  # noqa: E402
-from equipment_manager.vision.camera import build_frame_source  # noqa: E402
+from equipment_manager.vision.camera import build_frame_source, fresh_frame  # noqa: E402
 from equipment_manager.vision.types import DetectionError  # noqa: E402
 
 
@@ -103,20 +103,12 @@ def capture_manual(source, cv2, output_dir: Path, class_name: str, count: int, d
                 print("엔터 또는 q만 입력해 주세요.")
                 continue
             time.sleep(delay)
-            # Discard several queued USB frames after a long keyboard pause.
-            frame_count = 4 if source.backend_name == "opencv" else 1
-            with closing(source.frames(frame_count)) as frames:
-                index = 0
-                for frame in frames:
-                    try:
-                        index += 1
-                        if index == frame_count:
-                            _save_numbered_frame(source, cv2, frame, output_dir, class_name, saved + 1, count)
-                            saved += 1
-                    finally:
-                        frame = None
-                if index != frame_count:
-                    raise DetectionError("카메라에서 촬영 프레임을 받지 못했습니다.")
+            with fresh_frame(source) as frame:
+                try:
+                    _save_numbered_frame(source, cv2, frame, output_dir, class_name, saved + 1, count)
+                    saved += 1
+                finally:
+                    frame = None
     except (DetectionError, OSError) as exc:
         print(f"실패: {exc}")
         return 1

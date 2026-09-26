@@ -149,6 +149,28 @@ class CaptureSamplesTestCase(unittest.TestCase):
             self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 1, 0), 1)
         self.assertEqual(self.source.events, ["iterator-close", "camera-close"])
 
+    def test_manual_capture_interrupt_releases_borrowed_image_and_camera(self):
+        def interrupted_save(path, frame, options):
+            try:
+                raise KeyboardInterrupt()
+            finally:
+                frame = None
+        self.cv2.imwrite = interrupted_save
+        with patch("builtins.input", return_value=""):
+            self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 1, 0), 130)
+        self.assertEqual(self.source.events, ["iterator-close", "camera-close"])
+        self.assertTrue(all(ref() is None for ref in self.source.references))
+
+    def test_short_usb_capture_fails_without_saving_old_frame(self):
+        self.source.backend_name = "opencv"
+        original_frames = self.source.frames
+        self.source.frames = lambda count: original_frames(count - 1)
+        with patch("builtins.input", return_value=""):
+            self.assertEqual(capture_manual(self.source, self.cv2, self.output, "meter", 1, 0), 1)
+        self.assertEqual(self.cv2.saved, 0)
+        self.assertEqual(self.source.events, ["iterator-close", "camera-close"])
+        self.assertTrue(all(ref() is None for ref in self.source.references))
+
     def test_startup_interrupt_closes_camera_and_returns_cancelled_status(self):
         with patch("scripts.capture_samples.time.sleep", side_effect=KeyboardInterrupt):
             self.assertEqual(self.capture(), 130)

@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from equipment_manager import create_app
-from equipment_manager.db import get_db
+from equipment_manager.db import _backfill_active_loans, get_db
 
 
 OLD_SCHEMA = """
@@ -33,6 +33,39 @@ CREATE TABLE device_status (
 
 
 class DatabaseMigrationTestCase(unittest.TestCase):
+    def test_legacy_return_reads_only_as_many_loans_as_needed(self):
+        fetched = []
+
+        class TrackingCursor(sqlite3.Cursor):
+            def fetchall(self):
+                rows = super().fetchall()
+                fetched.append(len(rows))
+                return rows
+
+        class TrackingConnection(sqlite3.Connection):
+            def execute(self, sql, parameters=()):
+                if "SELECT loan_transaction_id, remaining_quantity" in sql:
+                    return self.cursor(factory=TrackingCursor).execute(sql, parameters)
+                return super().execute(sql, parameters)
+
+        with closing(sqlite3.connect(":memory:", factory=TrackingConnection)) as db:
+            db.row_factory = sqlite3.Row
+            db.executescript((Path(__file__).parents[1] / "equipment_manager/schema.sql").read_text(encoding="utf-8"))
+            db.execute("""INSERT INTO equipment
+                (id, name, total_qty, available_qty, created_at, updated_at)
+                VALUES (1, 'meter', 100, 0, '2026-01-01', '2026-01-01')""")
+            db.executemany("""INSERT INTO transactions
+                (id, student_id, equipment_id, action, quantity, created_at)
+                VALUES (?, '30304', 1, 'loan', 1, '2026-01-01')""",
+                ((f"loan-{index:03}",) for index in range(100)))
+            db.execute("""INSERT INTO transactions
+                (id, student_id, equipment_id, action, quantity, created_at)
+                VALUES ('return', '30304', 1, 'return', 1, '2026-01-02')""")
+            _backfill_active_loans(db)
+            self.assertEqual(fetched, [1])
+            self.assertEqual(db.execute("SELECT SUM(remaining_quantity) FROM active_loans").fetchone()[0], 99)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM return_allocations").fetchone()[0], 1)
+
     def test_existing_transactions_are_preserved_and_backfilled(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             database = Path(temp_dir) / "old.db"

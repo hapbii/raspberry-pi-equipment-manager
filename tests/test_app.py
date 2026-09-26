@@ -112,6 +112,61 @@ class EquipmentManagerTestCase(unittest.TestCase):
         self.assertEqual(payload["inventory"][0]["loan_period_days"], 7)
         self.assertNotIn("student_id", str(payload))
 
+    def test_invalid_quantity_never_consumes_recognition_or_changes_balance(self):
+        equipment = self.first_equipment()
+        token = self.scan(equipment["id"])
+        for quantity in (True, False, 1.1, 1.0, float("inf"), None, [], {}):
+            with self.subTest(quantity=quantity):
+                response = self.transact(token, quantity=quantity)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(self.first_equipment()["available_qty"], equipment["available_qty"])
+        self.assertEqual(self.transact(token).status_code, 200)
+
+    def test_indicator_failure_does_not_turn_committed_loan_into_error(self):
+        equipment = self.first_equipment()
+        token = self.scan(equipment["id"])
+        with patch("equipment_manager.routes.station.get_indicator", side_effect=RuntimeError("GPIO unavailable")):
+            response = self.transact(token)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["transaction"]["available_qty"], equipment["available_qty"] - 1)
+        self.assertEqual(self.transact(token).status_code, 422)
+
+    def test_scan_error_survives_failed_status_and_indicator_updates(self):
+        self.login_admin()
+        equipment = self.first_equipment()
+        with patch("equipment_manager.routes.station.get_detection_service") as service, patch(
+            "equipment_manager.routes.station.set_device_status", side_effect=RuntimeError("DB busy")
+        ), patch("equipment_manager.routes.station.get_indicator", side_effect=RuntimeError("GPIO failed")):
+            service.return_value.detect.side_effect = DetectionError("camera disconnected")
+            response = self.client.post("/api/scans", json={"mock_equipment_id": equipment["id"]})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.get_json()["error"], "camera disconnected")
+
+    def test_csrf_failure_never_redirects_to_external_referrer(self):
+        self.app.config["CSRF_ENABLED"] = True
+        response = self.client.post("/admin/login", headers={"Referer": "https://untrusted.invalid/login"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/")
+
+    def test_scan_and_transaction_require_a_json_object(self):
+        self.login_admin()
+        for endpoint in ("/api/scans", "/api/transactions"):
+            for body in ("null", "[]", "false", "0", '"text"'):
+                with self.subTest(endpoint=endpoint, body=body):
+                    response = self.client.post(endpoint, data=body, content_type="application/json")
+                    self.assertEqual(response.status_code, 400)
+
+    def test_mock_id_validation_does_not_overflow_sqlite(self):
+        self.login_admin()
+        for value in (2**80, -(2**80), float("inf"), 1.2, True, None):
+            with self.subTest(value=value):
+                response = self.client.post("/api/scans", json={"mock_equipment_id": value})
+                self.assertEqual(response.status_code, 400)
+
+    def test_legacy_integer_string_quantity_still_works(self):
+        token = self.scan(self.first_equipment()["id"])
+        self.assertEqual(self.transact(token, quantity="1").status_code, 200)
+
     def test_shutdown_releases_long_lived_service_references(self):
         detection_service = self.app.extensions["detection_service"]
 

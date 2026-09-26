@@ -24,7 +24,8 @@ def backup_database(source: Path, backup_dir: Path) -> Path:
             integrity = dst.execute("PRAGMA quick_check").fetchone()[0]
         if integrity != "ok":
             raise RuntimeError(f"백업 무결성 검사에 실패했습니다: {integrity}")
-    except Exception:
+    except BaseException:
+        # Ctrl+C must not leave a partial file that looks like a valid backup.
         destination.unlink(missing_ok=True)
         raise
 

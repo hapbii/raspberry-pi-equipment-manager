@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import secrets
 import threading
-from contextlib import closing
 from pathlib import Path
 
 from flask import Flask, Response, abort, jsonify, render_template, request
+from werkzeug.exceptions import HTTPException
 
+from equipment_manager.vision.camera import fresh_frame
 from equipment_manager.vision.types import DetectionError
 from equipment_manager.web_server import run_web_server
 
@@ -31,33 +32,28 @@ class PreviewSession:
         # Reject concurrent camera work rather than building an image/work queue.
         if not self._lock.acquire(blocking=False):
             raise PreviewBusy("카메라가 처리 중입니다. 잠시 뒤 다시 눌러 주세요.")
+        result = frame = None
         try:
             if self._closed:
                 raise DetectionError("촬영 프로그램이 종료되었습니다.")
             if save and self.saved >= self.count:
                 raise PreviewBusy("설정한 촬영 장수에 도달했습니다.")
-            # USB buffers may contain old frames after a hidden-tab pause.
-            frame_count = 4 if self.source.backend_name == "opencv" else 1
-            result = None
-            with closing(self.source.frames(frame_count)) as frames:
-                index = 0
-                for frame in frames:
-                    try:
-                        index += 1
-                        if index == frame_count:
-                            if save:
-                                path = self.save_photo(frame, self.saved + 1)
-                                self.saved += 1
-                                self.last_file = path.name
-                                result = self.status()
-                            else:
-                                result = (self._encode_preview(frame), self.saved)
-                    finally:
-                        frame = None
-            if result is None:
-                raise DetectionError("카메라에서 화면을 받지 못했습니다.")
+            with fresh_frame(self.source) as frame:
+                try:
+                    if save:
+                        path = self.save_photo(frame, self.saved + 1)
+                        self.saved += 1
+                        self.last_file = path.name
+                        result = self.status()
+                    else:
+                        result = (self._encode_preview(frame), self.saved)
+                finally:
+                    frame = None
             return result
         finally:
+            # Iterator cleanup can fail after JPEG encoding. A retained
+            # traceback must not keep that response buffer alive.
+            result = frame = None
             self._lock.release()
 
     def _encode_preview(self, frame):
@@ -95,7 +91,7 @@ def create_preview_app(session, class_name, output_dir):
         # requests from another website visited in the same browser.
         if request.path in {"/frame.jpg", "/capture"}:
             supplied = request.headers.get("X-Preview-Token", "")
-            if not secrets.compare_digest(supplied, token):
+            if not supplied.isascii() or not secrets.compare_digest(supplied, token):
                 abort(403)
 
     @app.after_request
@@ -127,10 +123,10 @@ def create_preview_app(session, class_name, output_dir):
 
     @app.errorhandler(Exception)
     def failed(error):
-        from werkzeug.exceptions import HTTPException
         if isinstance(error, HTTPException):
             return error
-        app.logger.error("Photo preview request failed: %s", error)
+        # Buffered logging handlers must not retain camera exception tracebacks.
+        app.logger.error("Photo preview request failed: %s", str(error))
         return jsonify(error="카메라 또는 저장 오류입니다. 라파 터미널 메시지를 확인하세요."), 503
 
     return app

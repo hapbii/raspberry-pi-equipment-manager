@@ -65,7 +65,7 @@ def find_equipment_by_name(name: str) -> dict | None:
 
 def _validate_loan_period_days(loan_period_days: int) -> int:
     maximum = current_app.config["MAX_LOAN_DAYS"]
-    if loan_period_days < 0 or loan_period_days > maximum:
+    if type(loan_period_days) is not int or not 0 <= loan_period_days <= maximum:
         raise InventoryError(f"대여 기간은 0~{maximum}일 사이여야 합니다.")
     return loan_period_days
 
@@ -81,55 +81,41 @@ def add_equipment(name: str, total_qty: int, loan_period_days: int) -> None:
     clean_name = name.strip()
     if len(clean_name) < 2 or len(clean_name) > 40:
         raise InventoryError("기자재 이름은 2~40자로 입력해 주세요.")
-    if total_qty < 0 or total_qty > 9999:
+    if type(total_qty) is not int or not 0 <= total_qty <= 9999:
         raise InventoryError("전체 수량은 0~9999 사이여야 합니다.")
     loan_period_days = _validate_loan_period_days(loan_period_days)
     db = get_db()
     now = utc_now()
     try:
-        db.execute("BEGIN IMMEDIATE")
-        existing = db.execute(
-            "SELECT id, active FROM equipment WHERE name = ?",
-            (clean_name,),
-        ).fetchone()
-        if existing and int(existing["active"]) == 1:
-            raise InventoryError("이미 등록된 기자재 이름입니다.")
-        if existing:
-            db.execute(
-                """
-                UPDATE equipment
-                SET total_qty = ?, available_qty = ?, loan_period_days = ?,
-                    active = 1, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    total_qty,
-                    total_qty,
-                    loan_period_days,
-                    now,
-                    existing["id"],
-                ),
-            )
-        else:
-            db.execute(
-                """
-                INSERT INTO equipment(
-                    name, total_qty, available_qty, loan_period_days,
-                    active, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 1, ?, ?)
-                """,
-                (clean_name, total_qty, total_qty, loan_period_days, now, now),
-            )
-        db.commit()
-    except InventoryError:
-        db.rollback()
-        raise
+        with immediate_transaction(db):
+            existing = db.execute(
+                "SELECT id, active FROM equipment WHERE name = ?",
+                (clean_name,),
+            ).fetchone()
+            if existing and int(existing["active"]) == 1:
+                raise InventoryError("이미 등록된 기자재 이름입니다.")
+            if existing:
+                db.execute(
+                    """
+                    UPDATE equipment
+                    SET total_qty = ?, available_qty = ?, loan_period_days = ?,
+                        active = 1, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (total_qty, total_qty, loan_period_days, now, existing["id"]),
+                )
+            else:
+                db.execute(
+                    """
+                    INSERT INTO equipment(
+                        name, total_qty, available_qty, loan_period_days,
+                        active, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (clean_name, total_qty, total_qty, loan_period_days, now, now),
+                )
     except sqlite3.IntegrityError as exc:
-        db.rollback()
         raise InventoryError("이미 등록된 기자재 이름입니다.") from exc
-    except Exception:
-        db.rollback()
-        raise
 
 
 def create_scan_session(equipment_id: int, confidence: float, owner_key: str | None = None) -> dict:
@@ -142,22 +128,22 @@ def create_scan_session(equipment_id: int, confidence: float, owner_key: str | N
     ttl = current_app.config["SCAN_TOKEN_TTL_SECONDS"]
     expires = created + timedelta(seconds=ttl)
     db = get_db()
-    delete_unreferenced_scan_sessions(db, created.isoformat(timespec="seconds"))
-    db.execute(
-        """
-        INSERT INTO scan_sessions(token, equipment_id, confidence, created_at, expires_at, owner_key)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            token,
-            equipment_id,
-            max(0.0, min(1.0, confidence)),
-            created.isoformat(timespec="seconds"),
-            expires.isoformat(timespec="seconds"),
-            owner_key,
-        ),
-    )
-    db.commit()
+    with immediate_transaction(db):
+        delete_unreferenced_scan_sessions(db, created.isoformat(timespec="seconds"))
+        db.execute(
+            """
+            INSERT INTO scan_sessions(token, equipment_id, confidence, created_at, expires_at, owner_key)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                token,
+                equipment_id,
+                max(0.0, min(1.0, confidence)),
+                created.isoformat(timespec="seconds"),
+                expires.isoformat(timespec="seconds"),
+                owner_key,
+            ),
+        )
     return {
         "token": token,
         "equipment_id": equipment_id,
@@ -247,7 +233,7 @@ def commit_transaction(
     student_id = _validate_student_id(student_id)
     if action not in {"loan", "return"}:
         raise InventoryError("대여 또는 반납을 선택해 주세요.")
-    if not isinstance(quantity, int) or quantity < 1 or quantity > 20:
+    if type(quantity) is not int or quantity < 1 or quantity > 20:
         raise InventoryError("수량은 1~20 사이여야 합니다.")
     reason = _validate_loan_reason(reason, action)
     db = get_db()

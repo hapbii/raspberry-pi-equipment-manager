@@ -83,11 +83,14 @@ class YoloDetector:
         return self._model
 
     def _predict_best(self, frame) -> tuple[str, float] | None:
-        model = self._load_model()
+        model = None
         result_stream = None
         result = None
         boxes = None
         try:
+            # Loading can fail too. Keep the input frame under the same cleanup
+            # boundary as inference, including missing/corrupt model failures.
+            model = self._load_model()
             result_stream = model.predict(
                 source=frame,
                 imgsz=self.image_size,
@@ -124,7 +127,7 @@ class YoloDetector:
                     self._clear_predictor_frame_references(model)
                 finally:
                     # A retained error traceback must not pin our input image.
-                    frame = boxes = result = result_stream = None
+                    frame = boxes = result = result_stream = model = None
 
     @contextmanager
     def _camera_frames(self, count: int):

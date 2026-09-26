@@ -19,6 +19,7 @@
 - Pi OS와 카메라가 이미 준비됐다면 [2부부터](#2부-카메라가-정상인지-확인하기) 시작합니다.
 - 학습 모델 없이 웹 화면만 보고 싶다면 [5부](#5부-모델이-없을-때-웹사이트부터-확인하기)를 봅니다.
 - `best.pt` 또는 NCNN 모델이 준비됐다면 [6부](#6부-학습-모델을-raspberry-pi로-복사하기)부터 실제 인식을 설정합니다.
+- 사진 촬영·PC로 가져오기·라벨링은 [15부](#15부-사진-촬영부터-pc-복사라벨링까지)를 순서대로 진행합니다. 명령마다 PC·라파 실행 위치를 표시했습니다.
 - 오류가 발생했다면 화면의 오류 문장을 복사한 뒤 [문제 해결](#문제-해결)에서 찾습니다.
 
 실제 동작까지의 전체 순서는 다음과 같습니다.
@@ -1104,40 +1105,260 @@ python scripts/backup_db.py
 
 ---
 
-# 15부. 학습 사진 모으기
+# 15부. 사진 촬영부터 PC 복사·라벨링까지
 
-Pi 카메라로 학습용 원본 사진을 자동 촬영할 수 있습니다.
+**실시간 화면 없이 SSH 터미널에서 엔터로 촬영**하는 순서입니다. 거꾸로 설치된 카메라 사진은 PC로 가져올 때 180도 회전합니다. `best.pt`는 촬영·수동 라벨링 단계에서 필요하지 않습니다.
 
-멀티미터를 하나만 놓고 실행합니다.
+| 작업 | 실행할 곳 | 도구 |
+|---|---|---|
+| 카메라로 사진 촬영 | 라파 — PC에서 SSH로 접속한 창 | `scripts/capture_samples.py` |
+| 사진 가져오기·180도 회전 | Windows PC — SSH에 접속하지 않은 새 PowerShell | `scripts/download_photos.py` |
+| 사각형·종류 지정 | Windows PC 프로그램 | X-AnyLabeling |
+| 모델 학습 | PC 브라우저의 Google Colab | `training/YOLO_기자재_학습_Colab.ipynb` |
 
-> **실행 위치: Raspberry Pi 터미널(카메라가 연결된 Pi)**
+`PS C:\...>`가 보이면 PC이고, `pi30304@...:~ $`가 보이면 SSH로 접속한 라파입니다. 둘 다 PC 화면에 떠 있어도 **명령이 실행되는 기기는 다릅니다.** 아래 IP `10.177.156.96`은 현재 접속 예시이며 바뀌면 새 IP로 바꾸세요.
+
+## 15-1. 라파에 접속하고 촬영 준비하기
+
+> **실행 위치: Windows PC PowerShell — 첫 번째 창**
+
+```powershell
+ssh pi30304@10.177.156.96
+```
+
+처음 연결하는 주소면 SSH가 표시하는 장치 정보를 확인하고 연결합니다. 비밀번호는 입력해도 화면에 나타나지 않습니다. 접속 후 다음 명령부터는 라파에서 실행됩니다. 브라우저·8081 터널은 필요하지 않습니다.
+
+> **실행 위치: 접속된 라파 SSH 터미널**
 
 ```bash
-cd ~/raspberry-pi-equipment-manager
+cd /home/pi30304/raspberry-pi-equipment-manager
+sudo systemctl stop equipment-manager.service
+git pull --ff-only origin main
 source .venv/bin/activate
-python scripts/capture_samples.py multimeter --count 250 --interval 0.5
 ```
 
-다른 종류도 같은 방식으로 촬영합니다.
+대여 서버가 카메라를 잡고 있지 않도록 먼저 멈춥니다. 다른 터미널에서 `python serve.py`로 켜 둔 서버가 있으면 그 창에서도 Ctrl+C로 종료하세요. 촬영하는 동안 사이트도 멈춥니다. `git pull`이 로컬 변경 때문에 실패하면 강제로 덮어쓰지 말고 변경 내용을 확인하세요.
 
-> **실행 위치: Raspberry Pi 터미널(같은 프로젝트 폴더와 가상환경)**
+## 15-2. 화면 없이 사진 찍기
+
+> **실행 위치: 라파 SSH 터미널 — 먼저 시험 사진 한 장**
 
 ```bash
-python scripts/capture_samples.py arduino --count 250 --interval 0.5
-python scripts/capture_samples.py breadboard --count 250 --interval 0.5
+python scripts/capture_samples.py camera_check --count 1
 ```
 
-사진은 다음 폴더에 저장됩니다.
+3초 뒤 한 장을 촬영하고 종료합니다. 아래 PC 가져오기로 초점·밝기를 확인하세요. 시험 사진은 학습에 포함하지 않습니다.
+
+> **실행 위치: 라파 SSH 터미널 — 라즈베리파이 기자재 본 촬영**
+
+```bash
+python scripts/capture_samples.py raspberry_pi --manual --count 200
+```
+
+- 물체를 놓고 **엔터**를 누르면 기본 1초 뒤 한 장을 저장합니다. 손을 치울 시간이 더 필요하면 명령 끝에 `--delay 3`을 붙이세요.
+- 각도·거리·배경·조명을 조금씩 바꿔가며 반복합니다.
+- `--count 200`은 최대 장수입니다. **`q` 입력 후 엔터** 또는 **Ctrl+C**로 일찍 끝낼 수 있고 저장한 사진은 남습니다.
+- 다음 종류를 찍기 전에 현재 촬영을 종료하세요.
+
+> **실행 위치: 라파 SSH 터미널 — 아두이노를 찍을 때**
+
+```bash
+python scripts/capture_samples.py arduino --manual --count 200
+```
+
+> **실행 위치: 라파 SSH 터미널 — 브레드보드를 찍을 때**
+
+```bash
+python scripts/capture_samples.py breadboard --manual --count 200
+```
+
+Pi 카메라는 기존 `.env` 설정을 사용합니다. USB 카메라 0번이면 명령 끝에 `--backend opencv --camera-index 0`을 붙입니다. 사진은 **라파**의 아래 위치에 저장됩니다. 실행마다 촬영 회차 폴더가 새로 생깁니다.
 
 ```text
-datasets/raw/multimeter/
-datasets/raw/arduino/
-datasets/raw/breadboard/
+/home/pi30304/raspberry-pi-equipment-manager/datasets/raw/
+├─ camera_check/촬영회차/시험사진.jpg
+├─ raspberry_pi/촬영회차/사진.jpg
+└─ arduino/촬영회차/사진.jpg
 ```
 
-촬영할 때 물체의 각도, 거리, 배경, 조명을 계속 조금씩 바꿉니다. 실제 학교에서 카메라를 설치할 위치와 비슷한 사진도 포함합니다.
+## 15-3. 가져오기 코드를 실행할 PC 준비하기
 
-촬영한 사진은 라벨링한 뒤 `training/YOLO_기자재_학습_Colab.ipynb`로 학습합니다. 모델 클래스명은 영문 소문자로 단순하게 만드는 것을 권장합니다.
+촬영을 끝낸 뒤 **Windows PC에서 새 PowerShell 창**을 여세요. SSH 창은 그대로 둬도 됩니다. 가져오기 도구가 PC에서 별도의 SSH/SFTP 연결을 만듭니다.
+
+**파일 탐색기에서 PC의 프로젝트 폴더를 열고, 주소창에 `powershell`을 입력한 뒤 엔터**를 누르면 그 폴더에서 시작할 수 있습니다. `README.md`, `scripts`, `requirements-photo-transfer.txt`가 있는 폴더여야 합니다. Python 파일을 더블클릭하거나 라파 SSH 창에서 실행하지 마세요.
+
+> **실행 위치: Windows PC PowerShell — 프로젝트 폴더**
+
+```powershell
+Get-Location
+git pull --ff-only origin main
+python --version
+python -m pip install -r requirements-photo-transfer.txt
+```
+
+패키지 설치는 처음 한 번, 또는 요구사항 파일이 바뀌었을 때 실행합니다. 현재 작업하던 PC에는 설치되어 있습니다. `python`이 안 되고 `py --version`은 되면 아래 PC 명령의 `python`을 `py`로 바꾸세요. 둘 다 없으면 PC에 Python 3.10 이상을 먼저 설치해야 합니다. **라파에는 전송용 패키지를 설치하지 않습니다.**
+
+다른 PC에 프로젝트가 아예 없을 때만 아래 명령으로 내려받고 위 설치를 진행합니다. 이미 프로젝트가 있는 PC에서는 다시 복제하지 않습니다.
+
+> **실행 위치: Windows PC PowerShell — 새 PC 최초 준비, Git 설치 필요**
+
+```powershell
+git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
+cd raspberry-pi-equipment-manager
+```
+
+## 15-4. PC로 사진 가져오기와 180도 회전
+
+> **실행 위치: Windows PC PowerShell — 프로젝트 폴더**
+
+```powershell
+python scripts/download_photos.py --host 10.177.156.96
+```
+
+SSH 비밀번호를 입력하고 엔터를 누르면 다음 순서로 진행됩니다. 비밀번호를 코드·파일에 저장하지 않습니다.
+
+1. 라파 `datasets/raw/` 아래의 기자재별·촬영 회차별 폴더를 찾습니다.
+2. JPG/JPEG/PNG 사진을 PC의 임시 파일로 한 장씩 받습니다.
+3. PC에서 **180도 회전**해 같은 폴더 구조로 저장합니다. 라파 원본은 수정·삭제하지 않습니다.
+4. `training/classes.txt`도 복사하고 완료 장수와 PC 저장 위치를 표시합니다.
+
+기본 저장 위치는 **워크스페이스가 아니라 PC 다운로드 폴더**입니다. 현재 PC는 아래 경로이며, 다른 PC에서는 `happy`가 해당 Windows 사용자 이름으로 바뀝니다.
+
+```text
+C:\Users\happy\Downloads\equipment-photos-날짜시간-식별자\
+├─ classes.txt
+├─ transfer.json
+└─ raw\
+   ├─ camera_check\촬영회차\시험사진.jpg
+   ├─ raspberry_pi\촬영회차\사진.jpg
+   └─ arduino\촬영회차\사진.jpg
+```
+
+워크스페이스 안에 저장하려면 기본 명령 **대신** 아래처럼 실행합니다.
+
+> **실행 위치: Windows PC PowerShell — 프로젝트 폴더 안으로 저장하는 방법**
+
+```powershell
+$captureFolder = Join-Path (Get-Location).Path ("datasets\labeling-photos-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+python scripts/download_photos.py --host 10.177.156.96 --output "$captureFolder"
+```
+
+성공 메시지에 나온 폴더를 파일 탐색기로 엽니다. `datasets`는 GitHub 업로드에서 제외됩니다. 매번 새 폴더가 생기며 이미 있는 폴더를 지정하면 덮어쓰지 않고 중단합니다. 증분 복사가 아니라 **매번 새 복사본**을 만드는 방식입니다.
+
+> **실행 위치: Windows PC PowerShell — 한 종류만 가져오는 선택 예시**
+
+```powershell
+python scripts/download_photos.py --host 10.177.156.96 --class-name raspberry_pi
+```
+
+전송 중 Ctrl+C나 통신 오류가 발생하면 완성된 사진은 남고 임시 파일은 정리합니다. `transfer.json`의 `status`가 `complete`이면 전체 완료, `incomplete`이면 일부 완료입니다. 재실행은 새 폴더로 처음부터 복사합니다. JPG는 품질 95로 재압축됩니다. 카메라 방향을 고쳐 회전할 필요가 없으면 `--rotation 0`을 붙입니다.
+
+**이 단계에서 만든 PC 사진으로 라벨링하세요.** 나중에 라파의 거꾸로 된 사진으로 교체하거나 사진만 다시 회전하면 박스 좌표가 맞지 않습니다. 기존 TXT/JSON 라벨은 가져오기 대상이 아닙니다.
+
+## 15-5. X-AnyLabeling에서 박스 그리기
+
+> **작업 위치: Windows PC의 X-AnyLabeling 프로그램 — 터미널 명령 아님**
+
+현재 PC는 바탕화면의 **X-AnyLabeling 4.0.6**으로 실행합니다. 다른 PC에는 [공식 Windows 배포판](https://github.com/CVHub520/X-AnyLabeling/releases/tag/v4.0.6)을 준비하세요. 아래 메뉴·단축키는 기본 설정 기준이며 한국어 설정에서는 메뉴가 번역되어 보일 수 있습니다.
+
+1. **Open Dir / Ctrl+U**로 `raw/raspberry_pi/촬영회차`처럼 실제 사진이 있는 폴더를 엽니다. 시험용 `camera_check`는 제외합니다.
+2. 사진 방향을 확인하고 **R**로 일반 사각형을 선택합니다. 물체를 감싸는 대각선의 두 모서리를 차례로 클릭합니다.
+3. 이름 입력창에 해당 기자재의 영문 클래스명을 입력합니다. 한 사진에 대상이 여러 개면 각각 박스를 그립니다.
+4. 저장 상태를 확인하고 **D**로 다음 사진, **A**로 이전 사진으로 이동합니다. 기본 자동 저장은 `File > Auto Save`에서 확인합니다.
+
+처음에는 촬영 회차 하나씩 작업하면 사진과 내보낸 라벨을 대응시키기 쉽습니다. 물체 전체를 포함하되 불필요한 배경을 크게 넣지 마세요. 학습 대상이 아닌 손·책상에 기자재 이름을 붙이지 않습니다.
+
+번호는 **복사된 `classes.txt`의 줄 순서**입니다. 현재 저장소 기본값은 다음과 같습니다.
+
+| YOLO 번호 | 입력할 이름 | 기자재 |
+|---|---|---|
+| 0 | `raspberry_pi` | 라즈베리파이 |
+| 1 | `arduino` | 아두이노 |
+| 2 | `breadboard` | 브레드보드 |
+| 3 | `wheel` | 바퀴 |
+| 4 | `ultrasonic_sensor` | 초음파 센서 |
+| 5 | `servo_motor` | 서보 모터 |
+| 6 | `pir_sensor` | PIR 센서 |
+
+모든 회차에서 같은 목록을 사용하세요. 아두이노만 있는 폴더에서도 아두이노는 **1번**입니다. 목록을 바꾸려면 라벨링 시작 전에 `classes.txt`와 학습용 `data.yaml`의 `names`를 함께 맞추세요.
+
+## 15-6. YOLO 학습용 TXT 내보내기
+
+> **작업 위치: Windows PC의 X-AnyLabeling 프로그램**
+
+**일반 저장으로 생기는 JSON은 편집용입니다. 학습용 TXT는 별도로 내보내야 합니다.**
+
+1. `Export Annotations > Export YOLO Annotations`를 선택합니다.
+2. 작업 종류는 **객체 탐지(Detection)**를 선택합니다. Segmentation·Pose·회전 박스 작업이 아닙니다.
+3. 클래스 설정 파일을 요청하면 사진과 함께 받은 **`classes.txt`**를 선택합니다.
+4. 내보낸 결과를 확인합니다. 기본 경로는 연 사진 폴더 아래 `labels`이며 따로 지정했다면 그 폴더를 확인합니다.
+
+```text
+촬영회차/
+├─ raspberry_pi_001.jpg        ← 회전된 PC 사진
+├─ raspberry_pi_001.json       ← 편집용 작업 파일
+└─ labels/
+   └─ raspberry_pi_001.txt     ← YOLO 학습용
+```
+
+TXT 한 줄은 `클래스번호 중심X 중심Y 너비 높이`입니다. 좌표와 크기는 0~1 범위이며 프로그램이 계산합니다. 사진과 TXT의 **확장자를 제외한 이름이 일치**하는지 확인하고, 박스를 수정한 뒤에는 TXT도 다시 내보내세요. JSON도 보관하면 나중에 다시 편집할 수 있습니다. 메뉴·단축키·저장 방식은 [X-AnyLabeling 4.0.6 공식 설명서](https://github.com/CVHub520/X-AnyLabeling/blob/v4.0.6/docs/en/user_guide.md)를 기준으로 정리했습니다.
+
+## 15-7. 라벨링 다음 단계: Colab 학습 준비
+
+> **작업 위치: Windows PC 파일 탐색기, 이후 Google Drive·Colab 브라우저**
+
+회전된 사진과 TXT를 짝지어 모읍니다. 같은 회차를 train·val·test에 흩뿌리지 말고 **촬영 회차 단위로 분리**하세요. 같은 사진을 다시 다운로드한 복사본도 서로 다른 묶음에 넣지 않습니다. `camera_check`는 제외합니다.
+
+```text
+equipment_dataset/
+├─ data.yaml
+├─ images/
+│  ├─ train/사진A.jpg
+│  ├─ val/사진B.jpg
+│  └─ test/사진C.jpg
+└─ labels/
+   ├─ train/사진A.txt
+   ├─ val/사진B.txt
+   └─ test/사진C.txt
+```
+
+1. `training/dataset_example.yaml`을 위 폴더의 `data.yaml`로 복사합니다. `names` 번호는 라벨링에 쓴 `classes.txt`와 같아야 합니다.
+2. `equipment_dataset`을 Google Drive의 **내 드라이브 바로 아래**에 올립니다. 예시 YAML의 `path`는 `/content/drive/MyDrive/equipment_dataset`입니다.
+3. [학습 노트북](training/YOLO_기자재_학습_Colab.ipynb)을 내려받아 Colab에서 열고 GPU 런타임을 선택합니다.
+4. 셀을 위에서 아래로 실행하고, Drive 연결 뒤 `DATA_YAML`이 실제 `data.yaml` 위치와 일치하는지 확인합니다.
+5. 학습·검증 후 `best.pt`를 보관하고 README 6~9부의 모델 복사·실제 인식·메모리 검사로 진행합니다. 자세한 데이터 구조는 [학습 안내](training/README.md)를 참고하세요.
+
+가져오기 도구는 **학습용 PC 사진만 회전**합니다. 실제 인식용 카메라 입력은 아직 기존 방향이므로 모델 적용 시 입력 방향도 맞추거나 뒤집힌 방향을 포함해 학습·검증해야 합니다.
+
+## 15-8. 촬영 후 대여 사이트 다시 켜기
+
+라벨링은 PC에서 하므로 촬영을 마쳤다면 사이트를 다시 켜도 됩니다.
+
+> **실행 위치: 라파 SSH 터미널 — 촬영 종료 후**
+
+```bash
+sudo systemctl start equipment-manager.service
+systemctl is-active equipment-manager.service
+```
+
+`active`라면 PC 브라우저에서 `http://10.177.156.96:8080`으로 확인합니다. 수동 서버로 운영하던 경우에는 README 10부의 기존 실행 방법으로 다시 켜세요.
+
+## 15-9. 촬영·복사·라벨링이 안 될 때
+
+| 증상 | 확인할 것 |
+|---|---|
+| `can't open file ...download_photos.py` | PC 프로젝트 폴더에서 실행했는지, PC 코드도 `git pull`로 업데이트했는지 확인 |
+| `No module named paramiko` / `PIL` | PC에서 같은 `python`으로 `python -m pip install -r requirements-photo-transfer.txt` 실행 |
+| SSH 연결 시간 초과 | 라파 전원, 같은 네트워크, 현재 IP 확인 |
+| `not found in known_hosts` | PC에서 먼저 일반 `ssh 사용자명@IP`로 접속해 장치 확인 |
+| SSH 장치 키 불일치 | IP가 다른 장치에 배정됐는지 또는 Pi OS를 재설치했는지 확인 |
+| `Authentication failed` | SSH 계정 확인. 사용자명이 다르면 `--user` 지정 |
+| 라파 사진 경로를 찾을 수 없음 | 촬영 완료 여부 확인. 다른 설치 경로라면 `--remote-project /실제/프로젝트/경로` 지정 |
+| 이미 있는 PC 폴더라며 중단 | 새 `--output` 이름을 쓰거나 기본 자동 생성 경로 사용 |
+| JSON만 생기고 TXT가 없음 | 15-6의 YOLO 내보내기를 실행하고 `labels` 폴더 확인 |
+| 라벨 종류가 엉뚱하게 표시됨 | 회차별 `classes.txt` 순서와 `data.yaml`의 `names` 번호 비교 |
+
+자동 촬영·USB 옵션·카메라 오류의 추가 설명은 [촬영 상세 안내](training/PHOTO_CAPTURE.md)에 있습니다.
 
 ---
 
@@ -1370,7 +1591,7 @@ Windows 기본 설정은 `mock` 모드이므로 실제 카메라가 없어도 �
 
 # 기술 설명
 
-라파 카메라 사진을 PC로 옮겨 labelImg에서 작업하는 방법은 [촬영·PC 복사·labelImg 안내](training/PHOTO_CAPTURE.md)에 정리했습니다. **PC 브라우저 실시간 미리보기·촬영 버튼(`--preview`)**, 수동 엔터 촬영, 자동 촬영을 지원하며 모델 없이 실행됩니다. 미리보기는 SSH 터널로 연결하므로 안내서 1~3부의 PC·라파 명령을 따라 하세요.
+사진 촬영·전송·X-AnyLabeling 라벨링의 전체 순서는 [15부](#15부-사진-촬영부터-pc-복사라벨링까지)에 있습니다. 기본 안내는 **실시간 화면 없이 엔터로 촬영(`--manual`)**하는 방식입니다. 라파의 촬영 코드와 PC의 가져오기 코드를 각각 실행하며, PC 복사본을 180도 회전해 라벨링합니다. 추가 옵션은 [촬영 상세 안내](training/PHOTO_CAPTURE.md)를 참고하세요.
 
 2026-09-23 수량 일관성 보완: 대여 중 수량은 전체 수량과 사용 가능 수량의 차이가 아니라 실제 미반납 기록에서 집계합니다. 관리자 개별·일괄 수정은 `사용 가능 = 전체 - 실제 미반납`을 만족해야 저장됩니다. 기존 불일치는 자동으로 덮어쓰지 않고 관리자 화면에 안내하며, 실제 보유 수량 확인 후 수정해야 합니다. 대여 취소는 별도 반납 거래를 만드는 것이 아니라 기존 대여를 취소하고 사용 가능 수량을 복구하는 작업입니다.
 
@@ -1426,6 +1647,42 @@ tests/                    자동 테스트
 
 ## 자동 테스트
 
+### 2026-09-26 사진 전송·회전 및 전체 변경 검증
+
+PC용 SSH/SFTP 사진 가져오기와 180도 회전 기능을 추가하고, 15부에 화면 없는 촬영부터 라벨링까지의 실행 위치·명령을 정리했습니다. 전송 테스트는 회전 픽셀 방향, 원본 보존, 폴더 구조, 중단·손상·전송 중 변경된 파일 처리, 기존 폴더 보호, 클래스 선택, EXIF 방향 정리를 확인합니다.
+
+- Python 전체 검사: **221개 중 219개 통과, Windows 환경에서 Linux/systemd 검사 2개 제외**.
+- JavaScript 화면 검사: **32개 통과**.
+- Python 컴파일·패치 형식 검사 통과.
+- 실제 라파 SSH/SFTP 연결로 기존 사진 3장 복사·180도 회전 확인. 실제 카메라 재촬영이나 YOLO 학습을 실행한 검사는 아닙니다.
+- GitHub 자동 검사에서도 `requirements-photo-transfer.txt`를 설치해 사진 전송 테스트를 실행합니다.
+
+### 2026-09-26 전체 코드 리팩토링·자원 점검
+
+촬영 기능뿐 아니라 로그인·권한, 대여·반납, SQLite, 객체인식, 웹 화면, 서버 종료·배포 도구, Colab 노트북까지 검토했습니다. 모델 로딩 실패 시 남는 이미지 참조, 중단된 DB 작업의 롤백 누락, LED·부저 오류가 저장 성공을 실패로 바꾸는 문제, 화면 이탈 시 요청·타이머 정리 등을 추가 수정했습니다. Colab 사진 검증도 결과 전체를 보관하지 않는 스트리밍 방식으로 변경했습니다.
+
+Windows PC에서 Python 213개 중 211개 통과·2개 건너뜀, JavaScript 32개 통과를 확인했습니다. 대여·반납 500쌍의 반복 검사와 1080p 합성 이미지 미리보기 1,000회 검사도 수행했습니다. 실제 Pi의 카메라·YOLO 장시간 안정성 검사를 대신하지는 않습니다.
+
+상세한 점검 범위, 수정 이유, 메모리 측정값과 재실행 명령은 [전체 코드 점검 결과](docs/REFACTORING_AUDIT_2026-09-26.md)에 정리했습니다. `.env`나 운영 DB를 새로 만들 필요는 없습니다.
+
+### 2026-09-26 촬영 미리보기 리팩토링·메모리 점검
+
+수동 촬영과 브라우저 미리보기에서 중복되던 최신 프레임 선택·USB 대기 프레임 버리기·반복자 종료를 `fresh_frame()`으로 통합했습니다. 이미지 변환 후 반복자 정리에 실패하면 오류 기록에 JPEG 버퍼가 남던 경로를 재현하고 수정했습니다. 미리보기 오류 로그에는 예외 객체 대신 문자열만 전달해 버퍼를 간접 참조하지 않도록 했습니다.
+
+브라우저에서 페이지를 떠났다가 돌아올 때 대기 중이던 촬영 클릭이 재실행되는 문제를 수정했습니다. 탭 숨김·페이지 이동 시 화면 이미지와 미리보기 요청·타이머를 정리하고, 늦게 도착한 이전 화면은 폐기합니다. 이미 전송된 저장 요청은 탭을 숨겼다는 이유만으로 취소하지 않으며, 연결이 끊겨도 자동 재촬영하지 않습니다. 복귀 후 새 화면 응답으로 실제 저장 장수를 다시 확인합니다.
+
+Windows PC에서 1920×1080 모의 이미지를 만들고 **실제 OpenCV JPEG 변환 및 파일 저장**을 수행했습니다. 100회 예열 후 미리보기 1,000회 동안 RSS는 **68.7MB → 68.7MB**였고, 예열을 포함해 44장의 임시 사진을 저장했습니다. 이전 프레임·앱 참조가 해제됐고 Python 스레드 수는 1개로 유지됐습니다. 브라우저 검사에는 500회 화면 갱신과 100회 페이지 복귀 반복이 포함됩니다. 이는 실제 Raspberry Pi 센서·YOLO 추론이나 모든 조건에서의 누수 부재를 보장하는 결과는 아닙니다.
+
+> **실행 위치: Windows PC PowerShell의 프로젝트 폴더 — OpenCV와 NumPy가 설치된 환경에서 선택 실행. 운영 사진·DB 대신 임시 폴더를 사용합니다.**
+
+```powershell
+python tests/test_capture_preview_soak.py --cycles 1000 --warmup 100
+```
+
+OpenCV/NumPy가 없는 환경에서는 일반 자동 테스트 중 이 JPEG 검사 하나만 건너뜁니다. 모의 카메라·프레임 참조·브라우저 자원 정리 검사는 계속 실행됩니다.
+
+별도의 임시 DB 검사에서는 100쌍 예열 후 대여·반납 500쌍을 반복했습니다. RSS는 47.4MB → 48.8MB였고, 중간 측정값은 48.6 / 48.7 / 48.8 / 48.7 / 48.8MB였습니다. DB 무결성, 미반납 수량 0, 종료 후 앱·로그 핸들러 해제를 확인했습니다.
+
 ### 2026-09-18 리팩토링·자원 정리 점검
 
 카메라 프레임 반복자의 종료 처리를 공통 함수로 모았습니다. 특히 점검 중 반복자 종료가 중단되었을 때 오류 정보에 이미지 참조가 남던 경로를 수정했습니다. 이전 코드에서 이미지 참조가 남는 것을 재현한 뒤, 수정 코드에서 640×480×3바이트 모의 프레임과 중단 오류를 100회 반복하며 이미지가 해제되는지 확인합니다. 실제 카메라 드라이버나 YOLO 내부의 모든 참조가 해제된다는 보장은 아닙니다.
@@ -1473,7 +1730,7 @@ Windows PC에서 640×480×3바이트 모의 이미지로 10회 예열 후 USB �
 > **실행 위치: Windows PC의 PowerShell(프로젝트 폴더)**
 
 ```powershell
-node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipment_editor.cjs tests/test_poweroff_policy.cjs
+node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipment_editor.cjs tests/test_poweroff_policy.cjs tests/test_capture_preview.cjs
 ```
 
 > **실행 위치: Windows PC 또는 Raspberry Pi의 프로젝트 폴더(가상환경 활성화 후)**

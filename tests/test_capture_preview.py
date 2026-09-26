@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import re
 import unittest
+import weakref
 from pathlib import Path
 from unittest.mock import patch
 
 from scripts.capture_preview import PreviewSession, create_preview_app, run_preview
 from equipment_manager.vision.types import DetectionError
-from test_capture_samples import Frame, FrameSource, FakeCv
+from test_capture_samples import Frame, FrameIterator, FrameSource, FakeCv
 
 
 class Encoded:
@@ -63,6 +64,7 @@ class CapturePreviewTests(unittest.TestCase):
         self.assertEqual(self.client.get("/frame.jpg").status_code, 403)
         self.assertEqual(self.client.post("/capture").status_code, 403)
         self.assertEqual(self.client.post("/capture", headers={"X-Preview-Token": "bad"}).status_code, 403)
+        self.assertEqual(self.client.post("/capture", headers={"X-Preview-Token": "잘못된토큰"}).status_code, 403)
         self.assertEqual(self.client.get("/capture", headers=self.headers).status_code, 405)
         self.assertEqual(self.source.references, [])
 
@@ -130,6 +132,14 @@ class CapturePreviewTests(unittest.TestCase):
             with self.assertRaises(DetectionError):
                 self.session.take_frame()
 
+    def test_logging_does_not_retain_error_objects_or_frame_references(self):
+        self.cv.succeed = False
+        with self.assertLogs("scripts.capture_preview", level="ERROR") as captured:
+            response = self.client.get("/frame.jpg", headers=self.headers)
+        self.assertEqual(response.status_code, 503)
+        self.assertTrue(all(isinstance(arg, str) for record in captured.records for arg in record.args))
+        self.assertTrue(all(ref() is None for ref in self.source.references))
+
     def test_close_idempotent_and_blocks_new_capture(self):
         self.session.close()
         self.session.close()
@@ -151,6 +161,29 @@ class CapturePreviewTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 run_preview(self.source, self.cv, self.save_photo, "test", 2, Path("photos"), 8081)
         self.assertEqual(self.source.events, ["camera-close"])
+
+    def test_cleanup_exception_does_not_retain_encoded_photo(self):
+        class Jpeg(bytearray):
+            pass
+        references = []
+
+        class Encoder:
+            def tobytes(self):
+                jpeg = Jpeg(640 * 480)
+                references.append(weakref.ref(jpeg))
+                return jpeg
+
+        self.cv.imencode = lambda *args: (True, Encoder())
+        with patch.object(FrameIterator, "close", side_effect=RuntimeError("cleanup failed")):
+            try:
+                self.session.take_frame()
+            except RuntimeError as error:
+                self.assertEqual(str(error), "cleanup failed")
+                self.assertTrue(all(ref() is None for ref in references))
+                self.assertTrue(all(ref() is None for ref in self.source.references))
+                self.assertFalse(self.session._lock.locked())
+            else:
+                self.fail("Expected cleanup error")
 
 
 if __name__ == "__main__":

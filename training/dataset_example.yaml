@@ -1,10 +1,14 @@
 # 실제 데이터셋 경로에 맞게 수정하세요.
-path: /content/equipment_dataset
+path: /content/drive/MyDrive/equipment_dataset
 train: images/train
 val: images/val
 test: images/test
 
 names:
-  0: multimeter
+  0: raspberry_pi
   1: arduino
   2: breadboard
+  3: wheel
+  4: ultrasonic_sensor
+  5: servo_motor
+  6: pir_sensor

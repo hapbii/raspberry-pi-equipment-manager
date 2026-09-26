@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from typing import Protocol
 
 from .types import CameraError
@@ -19,6 +20,32 @@ class FrameSource(Protocol):
     def frames(self, count: int) -> Iterator[object]: ...
 
     def close(self) -> None: ...
+
+
+@contextmanager
+def fresh_frame(source: FrameSource):
+    """Borrow one current frame; discard queued USB images and close the iterator.
+
+    The caller must drop its own frame reference before leaving the context if
+    it retains exception tracebacks. This helper clears its references as well.
+    """
+    frame = frames = None
+    try:
+        count = 4 if source.backend_name == "opencv" else 1
+        with closing(source.frames(count)) as frames:
+            index = 0
+            for frame in frames:
+                index += 1
+                if index == count:
+                    try:
+                        yield frame
+                    finally:
+                        frame = None
+                    return
+                frame = None
+            raise CameraError("카메라에서 촬영 프레임을 받지 못했습니다.")
+    finally:
+        frame = frames = None
 
 
 class Picamera2FrameSource:

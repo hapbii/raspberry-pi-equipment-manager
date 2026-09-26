@@ -9,39 +9,62 @@ function startPreview(doc = document, env = window) {
   const counter = doc.getElementById("saved");
   const headers = {"X-Preview-Token": app.dataset.token};
   const limit = Number(app.dataset.limit);
-  let saved = 0, timer = null, busy = false, pending = false, stopped = false;
-  let objectUrl = null, controller = null, ready = false, saving = false;
+  let saved = 0, timer = null, pending = false, stopped = false;
+  let objectUrl = null, active = null, ready = false, generation = 0;
 
-  function updateButton() { button.disabled = !ready || pending || saving || saved >= limit; }
-  function schedule(delay = 200) {
+  function updateButton() {
+    button.disabled = stopped || doc.hidden || !ready || pending || Boolean(active?.capture) || saved >= limit;
+  }
+  function clearTimer() {
     if (timer !== null) env.clearTimeout(timer);
     timer = null;
-    if (!stopped && !doc.hidden) timer = env.setTimeout(tick, delay);
+  }
+  function clearDeadline(request) {
+    if (request?.deadline !== null && request?.deadline !== undefined) {
+      env.clearTimeout(request.deadline);
+      request.deadline = null;
+    }
+  }
+  function releaseImage() {
+    preview.removeAttribute("src");
+    preview.hidden = true;
+    if (objectUrl) env.URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+  }
+  function schedule(delay = 200) {
+    clearTimer();
+    if (!stopped && !doc.hidden && !active) timer = env.setTimeout(tick, delay);
   }
   async function tick() {
     timer = null;
-    if (stopped || doc.hidden || busy) return;
-    busy = true;
-    controller = new env.AbortController();
-    const timeout = env.setTimeout(() => controller?.abort(), 15000);
+    if (stopped || doc.hidden || active) return;
+    const request = {controller: new env.AbortController(), capture: pending, generation, deadline: null};
+    active = request;
+    pending = false;
+    request.deadline = env.setTimeout(() => request.controller.abort(), 15000);
+    const isCurrent = () => !stopped && !doc.hidden && request.generation === generation;
     let delay = 200;
-    const capture = pending;
-    saving = capture;
+    updateButton();
     try {
-      const response = await env.fetch(capture ? "/capture" : "/frame.jpg", {
-        method: capture ? "POST" : "GET", headers, cache: "no-store", signal: controller.signal
+      const response = await env.fetch(request.capture ? "/capture" : "/frame.jpg", {
+        method: request.capture ? "POST" : "GET", headers, cache: "no-store", signal: request.controller.signal
       });
+      if (!isCurrent()) {
+        await response.body?.cancel();
+        return;
+      }
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || `연결 오류 (${response.status}). 새로고침하거나 SSH 연결을 확인하세요.`);
       }
-      if (capture) {
+      if (request.capture) {
         const result = await response.json();
+        if (!isCurrent()) return;
         saved = result.saved;
         status.textContent = `저장 완료: ${result.file}`;
       } else {
         const blob = await response.blob();
-        if (stopped) return;
+        if (!isCurrent()) return;
         const nextUrl = env.URL.createObjectURL(blob);
         const previousUrl = objectUrl;
         objectUrl = nextUrl;
@@ -55,17 +78,17 @@ function startPreview(doc = document, env = window) {
       counter.textContent = String(saved);
       if (saved >= limit) status.textContent = `${saved}장 촬영 완료! 종료하려면 SSH 터미널에서 Ctrl+C를 누르세요.`;
     } catch (error) {
+      if (!isCurrent()) return;
       ready = false;
-      if (!stopped) status.textContent = capture
+      pending = false;
+      releaseImage();
+      status.textContent = request.capture
         ? `저장 결과를 확인하지 못했습니다. 자동 재촬영하지 않습니다. 저장 장수와 라파 폴더를 확인하세요. ${error.message}`
         : `화면을 불러오지 못했습니다. ${error.message}`;
       delay = 1500;
     } finally {
-      env.clearTimeout(timeout);
-      if (capture) pending = false;
-      saving = false;
-      controller = null;
-      busy = false;
+      clearDeadline(request);
+      if (active === request) active = null;
       updateButton();
       schedule(pending ? 0 : delay);
     }
@@ -75,24 +98,29 @@ function startPreview(doc = document, env = window) {
     pending = true;
     status.textContent = "사진을 저장하는 중입니다…";
     updateButton();
-    if (!busy) schedule(0);
+    schedule(0);
   });
+  function suspend(leaving) {
+    generation += 1;
+    pending = false;
+    ready = false;
+    clearTimer();
+    releaseImage();
+    // Hiding a tab must not cancel an in-flight save. Leaving the page can
+    // abort its response, but neither path retries that save automatically.
+    if (active && (leaving || !active.capture)) {
+      clearDeadline(active);
+      active.controller.abort();
+    }
+    updateButton();
+  }
   doc.addEventListener("visibilitychange", () => {
-    // Never automatically abort/retry a save: its disk write may have succeeded.
-    if (doc.hidden) {
-      if (timer !== null) env.clearTimeout(timer);
-      timer = null;
-      pending = false;
-      updateButton();
-    } else if (!busy) schedule(0);
+    if (doc.hidden) suspend(false);
+    else schedule(0);
   });
   env.addEventListener("pagehide", () => {
     stopped = true;
-    if (timer !== null) env.clearTimeout(timer);
-    controller?.abort();
-    if (objectUrl) env.URL.revokeObjectURL(objectUrl);
-    objectUrl = null;
-    preview.removeAttribute("src");
+    suspend(true);
   });
   env.addEventListener("pageshow", (event) => {
     if (event.persisted) { stopped = false; ready = false; updateButton(); schedule(0); }

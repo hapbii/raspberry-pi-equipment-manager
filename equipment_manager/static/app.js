@@ -4,9 +4,13 @@
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
-  const pendingRequests = new Set();
+  const pendingRequests = new Map();
   window.addEventListener("pagehide", () => {
-    pendingRequests.forEach((controller) => controller.abort());
+    pendingRequests.forEach((timeout, controller) => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    });
+    pendingRequests.clear();
   });
 
   function formatDate(value) {
@@ -18,8 +22,8 @@
 
   async function postJson(url, body) {
     const controller = new AbortController();
-    pendingRequests.add(controller);
     const timeout = window.setTimeout(() => controller.abort(), 120000);
+    pendingRequests.set(controller, timeout);
     try {
       const pending = fetch(url, {
         method: "POST",
@@ -30,6 +34,13 @@
       body = null;
       const response = await pending;
       const data = await response.json();
+      // A buffered response can finish after pagehide/BFCache restoration even
+      // when fetch was aborted. Never adopt an old recognition result then.
+      if (controller.signal.aborted) {
+        const error = new Error("Request interrupted");
+        error.name = "AbortError";
+        throw error;
+      }
       if (!response.ok || !data.ok) {
         const error = new Error(data.error || "요청 처리에 실패했습니다.");
         error.code = data.code || "request_failed";

@@ -60,7 +60,9 @@ def protect_post_requests():
         if is_api_request():
             return jsonify({"ok": False, "error": "요청 보안 토큰이 올바르지 않습니다."}), 400
         flash("요청 보안 토큰이 올바르지 않습니다. 다시 시도해 주세요.", "error")
-        return redirect(request.referrer or url_for("web.dashboard"))
+        # Referer is caller-controlled; do not redirect a failed security check
+        # to a third-party page or replay a POST-only endpoint with GET.
+        return redirect(url_for("web.dashboard"))
     return None
 
 

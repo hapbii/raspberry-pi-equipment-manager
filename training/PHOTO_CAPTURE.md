@@ -1,4 +1,4 @@
-# 라파 카메라 촬영 → PC 복사 → labelImg 라벨링
+# 라파 카메라 촬영 → 180도 회전·PC 복사 → X-AnyLabeling 라벨링
 
 `best.pt` 없이 촬영할 수 있습니다. 카메라와 같은 조명·거리·촬영 위치에서 모은 사진은 실제 사용 환경을 반영하는 데 도움이 됩니다. 한 각도에서 비슷한 사진만 수백 장 찍지 말고 각도·거리·배경을 바꾸세요.
 
@@ -9,12 +9,12 @@
 **실행 위치: Windows PC PowerShell**
 
 ```powershell
-ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8081:127.0.0.1:8081 pi30304@172.30.12.100
+ssh pi30304@10.177.156.96
 ```
 
 비밀번호는 화면에 표시되지 않아도 입력됩니다. 다음부터 `exit` 전까지는 **라파에서 실행하는 명령**입니다. IP가 바뀌면 라파에서 `hostname -I`로 확인하세요.
 
-이 명령은 SSH 접속과 함께 **미리보기용 보안 통로(터널)**를 만듭니다. PC 브라우저의 `127.0.0.1:8081`을 라파의 촬영 프로그램에 연결합니다. 일반 `ssh` 명령으로 이미 접속했다면 `exit`로 나온 다음 위 명령으로 다시 접속하세요. PC와 라파 모두 별도 모니터 프로그램을 설치할 필요는 없습니다.
+이 안내의 기본 방식은 **실시간 화면 없이 엔터로 촬영**하는 것입니다. 브라우저나 SSH 터널은 필요하지 않습니다. 처음부터 PC 전송·라벨링까지 따라 하려면 [메인 README 15부](../README.md#15부-사진-촬영부터-pc-복사라벨링까지)를 보세요.
 
 **실행 위치: 라파 SSH 터미널**
 
@@ -44,49 +44,9 @@ USB 카메라라면 다음 명령을 **대신** 사용합니다. 이 옵션은 �
 python scripts/capture_samples.py camera_check --count 1 --backend opencv --camera-index 0
 ```
 
-`camera_check` 사진은 시험용이며 학습 클래스에 포함하지 않습니다. 아래 PC 복사 명령으로 가져와 초점·밝기·색상부터 확인하세요. 실시간 화면을 보려면 바로 아래 **3부의 브라우저 촬영**을 사용하세요.
+`camera_check` 사진은 시험용이며 학습 클래스에 포함하지 않습니다. 아래 PC 복사 명령으로 가져와 초점·밝기·색상부터 확인하세요. 본 촬영은 아래 3부의 엔터 촬영을 사용하세요.
 
-## 3. 실시간 화면을 보면서 한 장씩 촬영하기 (추천)
-
-1부에서 `-L`이 포함된 SSH 명령으로 연결해야 합니다. 처음 연결한 SSH 터미널을 닫지 마세요.
-
-**실행 위치: 라파 SSH 터미널 — 라즈베리파이 최대 200장, 실시간 미리보기**
-
-```bash
-python scripts/capture_samples.py raspberry_pi --preview --count 200
-```
-
-**접속 위치: Windows PC 브라우저 주소창 — 명령어가 아니라 사이트 주소입니다**
-
-```text
-http://127.0.0.1:8081
-```
-
-1. 카메라의 실시간 화면이 PC 브라우저에 나타납니다. 이 주소에서는 기자재 대여 사이트가 아니라 **촬영 전용 화면**이 열립니다. 선생님·개발자 로그인이 필요하지 않으며 SSH 접속으로 보호됩니다.
-2. 촬영하려는 기자재를 화면에 맞추고 손을 치웁니다. **사진 촬영** 버튼을 한 번 누르면 새 사진 한 장을 라파에 저장합니다. 화면을 보고 있는 것만으로 사진이 저장되지는 않습니다.
-3. `저장 완료` 메시지와 저장 장수가 올라갔는지 확인합니다. 각도·거리·배경을 바꾸며 반복하세요. 저장 도중에는 중복 클릭되지 않습니다.
-4. 미리보기는 라파 2GB 메모리와 통신량을 고려해 **가로 최대 640px, 초당 최대 약 5회**로 갱신합니다. 실제 속도는 카메라·네트워크에 따라 더 느릴 수 있습니다. 저장 사진은 `.env`에 설정한 **카메라 원본 해상도**입니다. 화면의 글씨나 버튼은 사진에 찍히지 않습니다.
-5. 다른 브라우저 탭을 보거나 창을 최소화하면 화면 요청이 멈춥니다. 돌아오면 다시 갱신합니다. `--count 200`은 저장 가능한 최대 장수이며 200장을 모두 찍을 필요는 없습니다. 최대 장수에 도달하면 촬영 버튼만 잠깁니다.
-6. 끝나면 **라파 SSH 터미널에서 Ctrl+C**를 누릅니다. 브라우저만 닫으면 프로그램과 카메라는 계속 열려 있습니다. 저장한 사진은 남습니다.
-7. 다음 기자재 촬영 명령을 실행한 뒤 PC 브라우저를 **새로고침(F5)** 하세요. 프로그램을 다시 실행하면 보안 토큰도 바뀌므로 새로고침이 필요합니다.
-
-**실행 위치: 라파 SSH 터미널 — 아두이노 실시간 촬영**
-
-```bash
-python scripts/capture_samples.py arduino --preview --count 200
-```
-
-**실행 위치: 라파 SSH 터미널 — 브레드보드 실시간 촬영**
-
-```bash
-python scripts/capture_samples.py breadboard --preview --count 200
-```
-
-USB 카메라라면 위 명령 끝에 `--backend opencv --camera-index 0`을 붙이세요. 미리보기 촬영은 버튼 방식이며 `--manual`과 함께 쓸 수 없습니다. `--delay`, `--interval`은 미리보기 버튼 촬영에는 적용되지 않습니다.
-
-카메라 화면은 학교 Wi-Fi 전체에 공개하지 않고 **라파 내부 주소에만** 엽니다. 따라서 PC에서 `http://라파IP:8081`로 직접 접속하는 것은 의도적으로 안 됩니다. 꼭 SSH 터널과 `http://127.0.0.1:8081`을 사용하세요. 사진은 PC 브라우저 다운로드 폴더가 아니라 **라파의 `datasets/raw/클래스명/촬영회차/`**에 저장됩니다. PC 복사는 5부를 따라 하세요.
-
-### 화면 없이 엔터로 촬영하기 (기존 방식)
+## 3. 화면 없이 엔터로 촬영하기 (기본 방식)
 
 **실행 위치: 라파 SSH 터미널 — 라즈베리파이 최대 200장**
 
@@ -126,49 +86,65 @@ python scripts/capture_samples.py raspberry_pi --count 100 --interval 2
 
 같은 물체를 계속 움직이며 찍되 손에 가려지거나 흔들린 사진은 PC에서 제외하세요. 완전히 같은 장면의 연속 사진만 모으면 실제 인식 성능이 좋아지지 않을 수 있습니다.
 
-## 5. 사진을 PC로 복사하기
+## 5. 사진을 180도 회전해서 PC로 복사하기
 
-SSH 창은 그대로 두고 **PC에서 새 PowerShell 창**을 여세요. 다음은 라파에서 실행하는 명령이 아닙니다.
+촬영을 Ctrl+C로 마친 뒤, SSH 창은 그대로 두고 **PC에서 새 PowerShell 창**을 여세요. 다음은 라파에서 실행하는 명령이 아닙니다. PC의 이 프로젝트 폴더에서 실행합니다.
 
-**실행 위치: Windows PC의 새 PowerShell**
-
-```powershell
-$captureFolder = Join-Path $env:USERPROFILE ("Downloads\equipment-photos-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $captureFolder
-scp -r pi30304@172.30.12.100:/home/pi30304/raspberry-pi-equipment-manager/datasets/raw "$captureFolder"
-scp pi30304@172.30.12.100:/home/pi30304/raspberry-pi-equipment-manager/training/classes.txt "$captureFolder\classes.txt"
-explorer.exe "$captureFolder"
-```
-
-이는 복사이므로 라파의 원본 사진은 지워지지 않습니다. PC의 `다운로드/equipment-photos-날짜시간/raw/기자재명/촬영회차/`에 JPG가 있습니다. PC 폴더가 매번 달라 기존 라벨 파일도 덮어쓰지 않습니다.
-
-## 6. labelImg에서 YOLO 라벨 만들기
-
-labelImg는 **PC에서만** 실행합니다. 이미 설치돼 있다면 설치 단계는 건너뛰세요. 공식 저장소는 보관 상태여서 최신 Python/Qt 조합에서는 실행 문제가 생길 수 있습니다. 웹 서버용 가상환경에는 설치하지 말고 별도 환경을 사용하세요.
-
-**실행 위치: Windows PC PowerShell — 별도 라벨링 환경 설치 예시**
+**실행 위치: Windows PC의 새 PowerShell — 최초 한 번만 준비**
 
 ```powershell
-py -0p
-py -3.10 -m venv "$env:USERPROFILE\labelimg-venv"
-& "$env:USERPROFILE\labelimg-venv\Scripts\python.exe" -m pip install labelImg==1.8.6
+python -m pip install -r requirements-photo-transfer.txt
 ```
 
-`py -3.10`을 찾지 못하면 Python 3.10이 설치되지 않은 것입니다. 이 예시는 호환성 문제를 줄이기 위한 분리 환경이며 모든 PC에서 실행을 보장하지는 않습니다. 기존에 작동하는 labelImg가 있다면 그대로 사용하세요.
-
-**실행 위치: Windows PC PowerShell — 위 복사 명령을 실행했던 같은 창**
+**실행 위치: Windows PC의 새 PowerShell — 사진 가져올 때마다 실행**
 
 ```powershell
-& "$env:USERPROFILE\labelimg-venv\Scripts\labelImg.exe" "$captureFolder\raw" "$captureFolder\classes.txt"
+python scripts/download_photos.py --host 10.177.156.96
 ```
 
-1. **Open Dir**로 실제 JPG가 있는 촬영회차 폴더를 엽니다. 상위 `raw` 폴더만 열면 하위 폴더 사진이 안 보일 수 있습니다.
-2. 저장 형식을 **YOLO**로 바꿉니다. PascalVOC/XML로 저장하면 안 됩니다.
-3. 라벨 저장 위치를 해당 JPG 폴더로 지정하면 사진과 TXT를 짝지어 관리하기 쉽습니다.
-4. `W`를 누르고 기자재를 감싸는 사각형을 그립니다. 배경을 지나치게 포함하지 마세요.
-5. 정확한 영문 클래스명을 선택합니다. 폴더 이름만으로 자동 라벨링되는 것은 아닙니다.
-6. `Ctrl+S`로 저장하고 `D`로 다음 사진으로 이동합니다. 사진에 대상 물체가 여러 개면 모두 박스를 표시하세요.
-7. 사진과 같은 이름의 `.txt`가 생겼는지 확인합니다. 예: `raspberry_pi_...jpg` ↔ `raspberry_pi_...txt`.
+SSH 비밀번호를 입력하고 엔터를 누릅니다. 입력한 비밀번호는 화면에 표시되거나 파일에 저장되지 않습니다. 기존 SSH 창과 별개로 전송용 SSH/SFTP 연결을 열며, 8081 미리보기 터널은 필요하지 않습니다. IP가 바뀌면 `--host` 뒤 주소만 바꾸세요.
+
+처음 접속하는 주소라면 먼저 PC에서 `ssh pi30304@10.177.156.96`으로 정상 접속해 장치를 확인하세요. 도구는 PC의 `.ssh/known_hosts`에 등록된 장치만 사용하며, 키가 다르면 연결을 중단합니다.
+
+- **결과 위치:** 실행 시 표시되는 `사용자 홈/Downloads/equipment-photos-날짜시간-식별자/raw/기자재명/촬영회차/`.
+- **회전 방향:** 상하 반전이나 거울 반사가 아닌 **180도 회전**입니다. 거꾸로 설치된 카메라 사진을 바로 세웁니다.
+- **처리 위치:** 라파 사진을 PC의 임시 파일로 한 장씩 받은 뒤, PC에서 회전해 최종 폴더에 저장합니다. 라파 원본·촬영 프로그램·미리보기는 그대로이고 라파에 새 패키지를 설치하지 않습니다.
+- **복사 대상:** JPG/JPEG/PNG 사진과 `training/classes.txt`. 기자재·회차 폴더와 사진 이름을 유지합니다. `camera_check` 시험 사진도 포함되지만 학습에서는 제외하세요.
+- **라벨링 전 전용:** 기존 TXT/JSON 라벨은 복사하지 않습니다. 회전하면 좌표가 달라지므로 **완성된 PC 사진으로 새로 라벨링**하세요.
+- **사진 품질:** JPG는 품질 95로 다시 저장하므로 재압축됩니다. 크기와 색상 순서는 유지하고, EXIF 방향을 픽셀에 반영한 뒤 방향 태그를 제거해 프로그램마다 다시 뒤집히지 않도록 합니다.
+- **재실행:** 매번 라파 원본에서 새 폴더로 가져옵니다. 이미 회전한 PC 파일을 다시 회전하거나 기존 라벨을 덮어쓰지 않습니다. 같은 사진을 다시 받으면 별도 복사본이 생깁니다.
+- **중단:** 완성된 사진은 남고, 받던 사진·임시 파일은 정리합니다. `transfer.json`의 `status`가 `complete`이면 전체 완료, `incomplete`이면 일부만 완료된 상태입니다. 재개가 필요하면 명령을 다시 실행해 새 폴더로 전체 복사하세요.
+
+**실행 위치: Windows PC PowerShell — 라즈베리파이 사진만 가져오는 선택 예시**
+
+```powershell
+python scripts/download_photos.py --host 10.177.156.96 --class-name raspberry_pi
+```
+
+**실행 위치: Windows PC PowerShell — 저장할 새 폴더를 지정하는 선택 예시**
+
+```powershell
+python scripts/download_photos.py --host 10.177.156.96 --output "$env:USERPROFILE\Downloads\labeling-photos-01"
+```
+
+워크스페이스 안으로 가져오려면 다음 명령을 **대신** 사용하세요.
+
+**실행 위치: Windows PC PowerShell — 프로젝트 폴더**
+
+```powershell
+$captureFolder = Join-Path (Get-Location).Path ("datasets\labeling-photos-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+python scripts/download_photos.py --host 10.177.156.96 --output "$captureFolder"
+```
+
+`datasets`는 GitHub 업로드에서 제외됩니다. PC에서 프로젝트 폴더를 여는 방법과 패키지 준비는 [README 15-3](../README.md#15-3-가져오기-코드를-실행할-pc-준비하기)을 참고하세요.
+
+지정한 폴더가 이미 존재하면 중단합니다. 새 이름을 쓰세요. 기본 라파 프로젝트 경로는 `/home/pi30304/raspberry-pi-equipment-manager`입니다. 다른 사용자·경로라면 `--user 사용자명 --remote-project /절대/프로젝트/경로`를 지정하세요. 나중에 카메라 방향을 고쳐 회전이 필요 없어지면 `--rotation 0`을 붙입니다.
+
+학습 사진은 이제 바로 선 방향이고, 현재 실제 인식 코드의 카메라 입력은 여전히 거꾸로입니다. `best.pt` 적용 때에는 인식 입력도 같은 방향으로 보정하거나, 뒤집힌 방향을 포함한 학습·검증을 해야 합니다. 이 전송 도구는 실제 대여·반납의 카메라 입력을 변경하지 않습니다.
+
+## 6. X-AnyLabeling에서 YOLO 라벨 만들기
+
+PC의 **X-AnyLabeling 4.0.6**으로 회전된 사진을 엽니다. 박스 그리기, 클래스별 번호, 일반 JSON 저장과 YOLO TXT 내보내기의 차이, 내보낸 파일 확인 방법은 [README 15-5~15-7](../README.md#15-5-x-anylabeling에서-박스-그리기)에 자세히 정리했습니다. 그 순서대로 진행하세요. 시험용 `camera_check`는 학습에서 제외합니다.
 
 YOLO TXT 한 줄은 `클래스번호 중심X 중심Y 너비 높이`이며 좌표·크기는 0~1로 정규화됩니다. `classes.txt` 첫 줄이 0번입니다. **폴더마다 클래스 순서가 달라지면 다른 물체로 학습되므로 모든 촬영회차에서 같은 목록을 사용하세요.** 클래스 목록에서 안 보이는 이름을 즉석에서 추가하기보다 원래 목록과 일치하는지 먼저 확인하세요.
 
@@ -183,7 +159,56 @@ sudo systemctl start equipment-manager.service
 systemctl is-active equipment-manager.service
 ```
 
-`active`가 뜨면 PC에서 `http://172.30.12.100:8080`으로 확인하세요. 촬영은 모델 없이 가능하지만 실제 대여·반납 객체 인식은 `best.pt` 적용 후 별도 점검이 필요합니다.
+`active`가 뜨면 PC에서 `http://10.177.156.96:8080`으로 확인하세요. 촬영은 모델 없이 가능하지만 실제 대여·반납 객체 인식은 `best.pt` 적용 후 별도 점검이 필요합니다.
+
+## 선택 기능: 실시간 미리보기
+
+기본 엔터 촬영에는 필요 없는 선택 기능입니다. 미리보기를 사용할 때만 일반 SSH 연결 대신 아래 연결을 사용합니다. 터미널을 닫지 마세요.
+
+**실행 위치: Windows PC PowerShell — 선택 기능용 SSH 터널**
+
+```powershell
+ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8081:127.0.0.1:8081 pi30304@10.177.156.96
+```
+
+접속 후 프로젝트 폴더로 이동하고, 대여 서버를 멈추고 가상환경을 활성화하는 단계는 1부와 같습니다.
+
+**실행 위치: 라파 SSH 터미널 — 라즈베리파이 최대 200장, 실시간 미리보기**
+
+```bash
+python scripts/capture_samples.py raspberry_pi --preview --count 200
+```
+
+**접속 위치: Windows PC 브라우저 주소창 — 명령어가 아니라 사이트 주소입니다**
+
+```text
+http://127.0.0.1:8081
+```
+
+1. 카메라의 실시간 화면이 PC 브라우저에 나타납니다. 이 주소에서는 기자재 대여 사이트가 아니라 **촬영 전용 화면**이 열립니다. 선생님·개발자 로그인이 필요하지 않으며 SSH 접속으로 보호됩니다.
+2. 촬영하려는 기자재를 화면에 맞추고 손을 치웁니다. **사진 촬영** 버튼을 한 번 누르면 새 사진 한 장을 라파에 저장합니다. 화면을 보고 있는 것만으로 사진이 저장되지는 않습니다.
+3. `저장 완료` 메시지와 저장 장수가 올라갔는지 확인합니다. 각도·거리·배경을 바꾸며 반복하세요. 저장 도중에는 중복 클릭되지 않습니다.
+4. 미리보기는 라파 2GB 메모리와 통신량을 고려해 **가로 최대 640px, 초당 최대 약 5회**로 갱신합니다. 실제 속도는 카메라·네트워크에 따라 더 느릴 수 있습니다. 저장 사진은 `.env`에 설정한 **카메라 원본 해상도**입니다. 화면의 글씨나 버튼은 사진에 찍히지 않습니다.
+5. 다른 브라우저 탭을 보거나 창을 최소화하면 미리보기 요청이 멈추고 표시하던 이미지 메모리를 정리합니다. 돌아오면 새 화면과 저장 장수를 다시 읽습니다. 전송 전 대기 중인 촬영 클릭은 취소되며, 이미 전송된 저장은 완료될 수 있지만 자동 재촬영하지 않습니다. `--count 200`은 저장 가능한 최대 장수이며 200장을 모두 찍을 필요는 없습니다. 최대 장수에 도달하면 촬영 버튼만 잠깁니다.
+6. 끝나면 **라파 SSH 터미널에서 Ctrl+C**를 누릅니다. 브라우저만 닫으면 프로그램과 카메라는 계속 열려 있습니다. 저장한 사진은 남습니다.
+7. 다음 기자재 촬영 명령을 실행한 뒤 PC 브라우저를 **새로고침(F5)** 하세요. 프로그램을 다시 실행하면 보안 토큰도 바뀌므로 새로고침이 필요합니다.
+
+**실행 위치: 라파 SSH 터미널 — 아두이노 실시간 촬영**
+
+```bash
+python scripts/capture_samples.py arduino --preview --count 200
+```
+
+**실행 위치: 라파 SSH 터미널 — 브레드보드 실시간 촬영**
+
+```bash
+python scripts/capture_samples.py breadboard --preview --count 200
+```
+
+USB 카메라라면 위 명령 끝에 `--backend opencv --camera-index 0`을 붙이세요. 미리보기 촬영은 버튼 방식이며 `--manual`과 함께 쓸 수 없습니다. `--delay`, `--interval`은 미리보기 버튼 촬영에는 적용되지 않습니다.
+
+카메라 화면은 학교 Wi-Fi 전체에 공개하지 않고 **라파 내부 주소에만** 엽니다. 따라서 PC에서 `http://라파IP:8081`로 직접 접속하는 것은 의도적으로 안 됩니다. 꼭 SSH 터널과 `http://127.0.0.1:8081`을 사용하세요. 사진은 PC 브라우저 다운로드 폴더가 아니라 **라파의 `datasets/raw/클래스명/촬영회차/`**에 저장됩니다. PC 복사는 5부를 따라 하세요.
+
 
 ## 문제 해결
 
@@ -204,7 +229,7 @@ systemctl is-active equipment-manager.service
 **실행 위치: Windows PC 새 PowerShell — 8082로 SSH 터널 접속**
 
 ```powershell
-ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8082:127.0.0.1:8082 pi30304@172.30.12.100
+ssh -o ExitOnForwardFailure=yes -L 127.0.0.1:8082:127.0.0.1:8082 pi30304@10.177.156.96
 ```
 
 **실행 위치: 위 명령으로 접속한 라파 SSH 터미널**
@@ -227,4 +252,4 @@ python scripts/capture_samples.py raspberry_pi --preview --preview-port 8082 --c
 .venv/bin/python -m pip install --only-binary=:all: --no-deps simplejpeg==1.9.0
 ```
 
-공식 참고: [labelImg 사용법 및 클래스 순서](https://github.com/HumanSignal/labelImg), [Picamera2의 RGB888/BGR 바이트 배열](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py).
+공식 참고: [X-AnyLabeling](https://github.com/CVHub520/X-AnyLabeling), [Picamera2의 RGB888/BGR 바이트 배열](https://github.com/raspberrypi/picamera2/blob/main/picamera2/request.py).

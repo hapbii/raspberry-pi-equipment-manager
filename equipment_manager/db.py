@@ -179,8 +179,11 @@ def _backfill_active_loans(db: sqlite3.Connection) -> None:
             FROM active_loans
             WHERE student_id = ? AND equipment_id = ? AND remaining_quantity > 0
             ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date, created_at
+            LIMIT ?
             """,
-            (row["student_id"], row["equipment_id"]),
+            # Each matching loan contains at least one item; no more than the
+            # returned quantity is needed, even with years of legacy history.
+            (row["student_id"], row["equipment_id"], quantity),
         ).fetchall()
         for loan in loans:
             allocated = min(remaining, int(loan["remaining_quantity"]))
@@ -218,15 +221,15 @@ _UNCHANGED = object()
 
 def set_device_status(error: str | None | object = _UNCHANGED) -> None:
     db = get_db()
-    if error is _UNCHANGED:
-        db.execute("UPDATE device_status SET last_seen = ? WHERE id = 1", (utc_now(),))
-    else:
-        safe_error = None if error is None else str(error)[:500]
-        db.execute(
-            "UPDATE device_status SET last_seen = ?, last_error = ? WHERE id = 1",
-            (utc_now(), safe_error),
-        )
-    db.commit()
+    with db:
+        if error is _UNCHANGED:
+            db.execute("UPDATE device_status SET last_seen = ? WHERE id = 1", (utc_now(),))
+        else:
+            safe_error = None if error is None else str(error)[:500]
+            db.execute(
+                "UPDATE device_status SET last_seen = ?, last_error = ? WHERE id = 1",
+                (utc_now(), safe_error),
+            )
 
 
 def cleanup_expired_scan_sessions(retention_hours: int = 24) -> int:
