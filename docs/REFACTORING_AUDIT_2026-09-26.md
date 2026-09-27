@@ -69,4 +69,4 @@ python -m compileall -q equipment_manager scripts deploy tests wsgi.py serve.py
 git diff --check
 ```
 
-실제 라파 검사는 README 9부를 따릅니다. 이번 작업에서는 `.env`, 운영 DB, 기존 사진을 변경하지 않았으며, GitHub 커밋·업로드나 Raspberry Pi 배포는 수행하지 않았습니다.
+실제 라파 검사는 [README 실제 장치 검사](../README.md#diagnostics)를 따릅니다. 이번 작업에서는 `.env`, 운영 DB, 기존 사진을 변경하지 않았으며, GitHub 커밋·업로드나 Raspberry Pi 배포는 수행하지 않았습니다.
