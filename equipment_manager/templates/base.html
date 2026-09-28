@@ -7,6 +7,7 @@
   <title>{% block title %}기자재 관리 시스템{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='usage_guide.js') }}"></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">본문 바로가기</a>
@@ -45,7 +46,37 @@
 
   <footer class="site-footer">
     <strong>AI 기반 실습 기자재 관리 시스템</strong>
+    <button id="usage-guide-open" class="button ghost small" type="button" aria-haspopup="dialog" aria-controls="usage-guide" hidden>사용 유의사항</button>
     <span>{{ current_user.name ~ ' 로그인 중' if current_user else '학교 내부망에서 안전하게 운영하세요.' }}</span>
   </footer>
+
+  <dialog id="usage-guide" class="usage-guide" aria-labelledby="usage-guide-title" aria-describedby="usage-guide-intro">
+    <div class="usage-guide-content">
+      <p class="eyebrow">이용 전 안내</p>
+      <h2 id="usage-guide-title" tabindex="-1" autofocus>사용 전에 꼭 확인해 주세요</h2>
+      <p id="usage-guide-intro">정확한 대여·반납을 위해 아래 내용을 지켜 주세요.</p>
+      <ul class="usage-guide-list">
+        <li class="usage-guide-important">
+          <strong>카메라 앞에는 물품을 1개씩 놓아 주세요.</strong>
+          <p>카메라는 기자재 종류를 인식하며, 물품 수를 세지 않습니다. 여러 개를 빌리거나 반납할 때도 한 개씩 인식하고 처리해 주세요.</p>
+        </li>
+        <li>
+          <strong>라파에 연결된 카메라를 사용합니다.</strong>
+          <p>접속한 PC나 휴대전화의 카메라가 아닙니다. 물품 전체가 보이게 놓고 손이나 다른 물건으로 가리지 마세요.</p>
+        </li>
+        <li>
+          <strong>인식 결과를 확인한 뒤 확정해 주세요.</strong>
+          <p>대여·반납 구분과 기자재 이름을 확인하세요. 결과가 다르면 다시 인식하고, 확정 버튼을 누른 뒤 완료 메시지까지 확인해 주세요.</p>
+        </li>
+        <li>
+          <strong>본인 계정으로 이용하고 반납 기한을 지켜 주세요.</strong>
+          <p>대여 내역과 반납 기한을 확인하고, 공용 PC에서는 이용 후 로그아웃해 주세요. 잘못 처리했거나 수량이 다르면 선생님께 알려 주세요.</p>
+        </li>
+      </ul>
+      <form method="dialog" class="usage-guide-actions">
+        <button class="button primary" type="submit">확인했어요</button>
+      </form>
+    </div>
+  </dialog>
 </body>
 </html>

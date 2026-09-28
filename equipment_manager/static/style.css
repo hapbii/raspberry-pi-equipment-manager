@@ -76,6 +76,28 @@ nav { min-width: 0; display: flex; gap: 6px; }
   padding: 24px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem;
 }
 .site-footer strong { color: var(--navy); }
+.site-footer { align-items: center; flex-wrap: wrap; }
+.usage-guide {
+  width: min(580px, calc(100% - 28px)); max-width: none;
+  max-height: calc(100dvh - 28px); padding: 0;
+  border: 1px solid var(--line); border-radius: 22px;
+  color: var(--ink); background: var(--surface); box-shadow: 0 28px 75px rgba(5,17,38,.3);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.usage-guide::backdrop { background: rgba(7,18,36,.62); backdrop-filter: blur(4px); }
+html:has(.usage-guide[open]) { overflow: hidden; }
+.usage-guide-content { padding: clamp(20px, 5vw, 30px); }
+.usage-guide h2 { margin-bottom: 10px; font-size: clamp(1.25rem, 4vw, 1.55rem); line-height: 1.4; }
+.usage-guide h2:focus { outline: none; }
+#usage-guide-intro { color: var(--muted); font-size: .9rem; }
+.usage-guide-list { display: grid; gap: 15px; margin: 22px 0; padding: 0; list-style: none; }
+.usage-guide-list li { padding: 0 14px; }
+.usage-guide-list .usage-guide-important { padding: 15px 14px; border: 1px solid #c6d8f5; border-radius: 12px; background: #eef4ff; }
+.usage-guide-list strong { display: block; color: var(--navy); font-size: .95rem; }
+.usage-guide-list p { margin: 6px 0 0; color: var(--muted); font-size: .86rem; }
+.usage-guide-actions { display: flex; justify-content: flex-end; }
+.usage-guide-actions .button { min-width: 140px; }
+#usage-guide-open[hidden] { display: none; }
 
 h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 9px; color: var(--navy); font-size: clamp(1.85rem, 4vw, 2.75rem); line-height: 1.16; letter-spacing: -.04em; }
@@ -88,7 +110,6 @@ h2 { color: var(--navy); }
 .hero > *, .page-heading > *, .scan-layout > * { min-width: 0; }
 .hero p:not(.eyebrow), .page-heading p:not(.eyebrow) { color: var(--muted); }
 .hero-copy { max-width: 680px; }
-.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
 .device-card {
   min-width: 260px; display: flex; align-items: center; gap: 13px;
   padding: 18px 20px; border: 1px solid rgba(198,211,229,.9); border-radius: 17px; background: rgba(255,255,255,.86); box-shadow: var(--shadow); backdrop-filter: blur(8px);
