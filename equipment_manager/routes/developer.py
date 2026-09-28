@@ -8,7 +8,9 @@ from flask import current_app, flash, g, redirect, render_template, request, url
 from ..auth import RateLimited, take_attempt
 from ..db import get_db
 from ..error_logs import get_error_log_store
-from ..power import poweroff_available, program_stop_available, schedule_poweroff, schedule_program_stop
+from ..power import (poweroff_available, program_stop_available, program_update_available,
+                     schedule_poweroff, schedule_program_stop, schedule_program_update)
+from ..updates import update_status
 from ..security import constant_time_equal
 from ..system_metrics import current_rss_mb
 from ..vision import DetectionError, get_detection_service
@@ -42,6 +44,8 @@ def developer_page():
         error_log=get_error_log_store().snapshot(),
         poweroff_available=poweroff_available(),
         program_stop_available=program_stop_available(),
+        program_update_available=program_update_available(),
+        update_status=update_status(),
     )
 
 
@@ -83,17 +87,24 @@ def developer_program_stop():
     return _confirm_stop("program-stop", "program_stop.html", program_stop_available(), schedule_program_stop)
 
 
+@bp.route("/developer/update", methods=["GET", "POST"])
+@developer_required
+def developer_update():
+    return _confirm_stop("update", "update.html", program_update_available(), schedule_program_update)
+
+
 def _confirm_stop(action, template, available, schedule):
-    # Both entrypoints enforce developer_required before reaching this helper.
+    # All entrypoints enforce developer_required before reaching this helper.
+    label = "업데이트" if action == "update" else "종료"
     def page(*, error=None, scheduled=False, status=200):
         return render_template(template, available=available, scheduled=scheduled, error=error), status
 
     if request.method == "GET":
         return page()
     if not available:
-        return page(error="종료 기능을 먼저 설치하고 서비스로 실행해 주세요.", status=503)
+        return page(error=f"{label} 기능을 먼저 설치하고 서비스로 실행해 주세요.", status=503)
     if request.form.get("confirmation") != action:
-        return page(error="종료 영향 안내를 확인하고 체크해 주세요.", status=400)
+        return page(error=f"{label} 영향 안내를 확인하고 체크해 주세요.", status=400)
     try:
         # Shared bucket: switching buttons cannot bypass password retry limits.
         take_attempt("poweroff", g.user["name"], limit=5, seconds=300)
@@ -104,7 +115,7 @@ def _confirm_stop(action, template, available, schedule):
     try:
         schedule()
     except RuntimeError as exc:
-        current_app.logger.exception("Developer stop request failed: %s", action)
+        current_app.logger.exception("Developer system request failed: %s", action)
         return page(error=str(exc), status=503)
-    current_app.logger.warning("Developer stop timer requested: %s", action)
+    current_app.logger.warning("Developer system timer requested: %s", action)
     return page(scheduled=True, status=202)

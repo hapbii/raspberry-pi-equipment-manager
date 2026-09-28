@@ -14,6 +14,7 @@
 | 사진에 박스 그리고 학습하기 | [6. 라벨링·Colab 학습](#labeling) |
 | `best.pt`를 실제 인식에 적용하기 | [7. 모델 적용](#model) → [8. 실제 장치 검사](#diagnostics) |
 | 전원을 켜면 자동 실행되게 하기 | [9. systemd와 종료](#service) |
+| 웹 버튼으로 코드 업데이트하기 | [9-4. 업데이트·자동 재시작](#web-update) |
 | 학생·선생님이 사용하는 방법 | [10. 대여·반납과 관리](#usage) |
 | 다른 교실에서 접속이 안 될 때 | [11. 접속과 네트워크](#network) |
 | 코드 업데이트·DB 백업·복구 | [12. 운영과 유지보수](#maintenance) |
@@ -598,13 +599,13 @@ python scripts/test_model_image.py models/best.pt datasets/example.jpg --imgsz 3
 결과 이미지는 `runs/single-image-test/`에 저장합니다. 시험 사진 이름만 적은 예시이므로 `datasets/example.jpg`를 먼저 준비해야 합니다. 점검 후에는 [수동 실행](#web) 또는 [서비스 실행](#service) 중 하나로 서버를 켭니다.
 
 <a id="service"></a>
-## 9. 부팅 자동 실행과 종료
+## 9. 부팅 자동 실행·업데이트·종료
 
 ### 9-1. systemd 서비스 설치
 
 서비스 설치는 **라파의 일반 사용자로 SSH 로그인한 후** `sudo`를 붙여 실행합니다. 프로젝트 `.venv`와 `.env`가 준비되어 있어야 합니다. 별도의 수동 서버가 있으면 먼저 Ctrl+C로 종료하세요.
 
-종료 버튼까지 사용할 경우 polkit 패키지를 준비합니다.
+종료·업데이트 버튼을 사용할 경우 polkit 패키지를 준비합니다.
 
 **실행 위치: 라파 SSH 터미널 — 종료 기능 사용 시**
 
@@ -618,14 +619,14 @@ sudo apt install -y polkitd
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
-sudo bash deploy/install_service.sh --allow-mock --enable-poweroff
+sudo bash deploy/install_service.sh --allow-mock --enable-poweroff --enable-update
 ```
 
 **실행 위치: 라파 SSH 터미널 — 실제 `yolo` 운영용 설치**
 
 ```bash
 cd ~/raspberry-pi-equipment-manager
-sudo bash deploy/install_service.sh --enable-poweroff
+sudo bash deploy/install_service.sh --enable-poweroff --enable-update
 ```
 
 설치기는 설정을 검사하고 실행 사용자·경로에 맞는 서비스 파일을 만들며, 현재 서비스를 재시작하고 다음 부팅의 자동 실행을 등록합니다. `.env`와 운영 DB를 재생성하지 않습니다. 웹·DB의 `/healthz` 응답도 확인하지만, 실제 카메라 검사는 [8절](#diagnostics)에서 별도로 합니다.
@@ -634,9 +635,10 @@ sudo bash deploy/install_service.sh --enable-poweroff
 |---|---|
 | `--allow-mock` | 현재 `mock` 설정으로 웹 확인용 설치 허용 |
 | `--enable-poweroff` | 개발자 화면의 라파 종료·프로그램만 종료 권한 설치 |
+| `--enable-update` | 개발자 화면의 Git 업데이트·프로그램 재시작 권한 설치 |
 | `--check` | 위 옵션에 추가하면 검사만 하고 서비스 설치·실행은 하지 않음 |
 
-종료 기능이 필요 없으면 `--enable-poweroff`를 빼세요. 기존 설치를 이 옵션 없이 재설치하면 앱의 종료 권한이 해제됩니다. **부팅할 때 `git pull`은 자동 실행하지 않습니다.** 모델 준비 후 `mock`에서 `yolo`로 전환할 때는 `.env` 수정·검사 후 실제 운영용 설치 명령으로 재설치해 실행 옵션도 맞춥니다.
+종료 기능이 필요 없으면 `--enable-poweroff`, 업데이트 기능이 필요 없으면 `--enable-update`를 빼세요. 기존 설치를 해당 옵션 없이 재설치하면 그 기능의 권한이 해제됩니다. **부팅할 때 `git pull`은 자동 실행하지 않습니다.** 모델 준비 후 `mock`에서 `yolo`로 전환할 때는 `.env` 수정·검사 후 실제 운영용 설치 명령으로 재설치해 실행 옵션도 맞춥니다.
 
 ### 9-2. 상태 확인과 제어 명령
 
@@ -683,6 +685,52 @@ sudo poweroff
 ```
 
 로그인·촬영·파일 전송을 마치고 종료합니다. OS 종료를 확인한 뒤 전원을 분리하세요.
+
+<a id="web-update"></a>
+### 9-4. 웹 버튼으로 코드 업데이트와 자동 재시작
+
+**최초 한 번은 SSH 설치가 필요합니다.** 기존 서비스에는 업데이트 작업과 권한이 없으므로 `git pull`만으로는 버튼이 활성화되지 않습니다. 모든 사용자가 이용을 마친 뒤 설치하세요. 별도 수동 서버는 먼저 Ctrl+C로 종료합니다.
+
+**실행 위치: 라파 SSH 터미널 — 기존 프로젝트 업데이트 및 설치 준비**
+
+```bash
+cd ~/raspberry-pi-equipment-manager
+git status --short
+git pull --ff-only origin main
+sudo apt install -y polkitd git
+```
+
+Git 명령에 오류가 없으면 [9-1](#service)의 현재 모드에 맞는 설치 명령 **한 가지**를 실행합니다. 모델 없는 `mock`이면 `--allow-mock --enable-poweroff --enable-update`, 실제 `yolo`면 `--enable-poweroff --enable-update`를 지정합니다. 설치기는 현재 프로젝트의 절대 경로와 SSH 사용자를 기억하고 서버를 재시작합니다. 다른 경로로 이동했다면 설치기를 다시 실행하세요.
+
+**이후 사용 위치: 브라우저 → 개발자 로그인 → 시스템 → 프로그램 업데이트…**
+
+1. 모든 사용자의 대여·반납·인식이 끝났는지 확인합니다.
+2. 개발자 비밀번호와 안내 확인 후 **확인 · 업데이트 시작**을 누릅니다.
+3. 약 3초 후 별도 systemd 작업이 웹서버를 중지하고 **2초** 기다립니다.
+4. 현재 DB를 `backups/`에 백업한 뒤, 설치된 프로젝트 경로에서 해당 일반 사용자 권한으로 `git pull --ff-only origin main`을 실행합니다.
+5. 새 코드의 `serve.py --check`를 통과하면 **2초** 기다린 뒤 서버를 다시 켜고 `/healthz` 응답을 확인합니다. `mock` 설치는 검사에도 `--allow-mock`을 사용합니다.
+6. 잠시 후 시스템 화면으로 돌아가 **최근 업데이트 결과**와 버전을 확인합니다. 요청 접수 화면만으로 업데이트 성공을 판단하지 마세요.
+
+웹 프로그램이 종료되어도 업데이트 작업은 계속되고, 브라우저를 닫아도 중단되지 않습니다. 라파 전원과 SSH 연결은 유지됩니다. 처리 중에는 종료 버튼을 추가로 누르거나 수동 Git 작업을 하지 마세요. 인터넷 연결이 필요하며 네트워크·시작 시간에 따라 수십 초 이상 걸릴 수 있습니다.
+
+- `main` 브랜치와 깨끗한 작업 폴더가 필요합니다. 수정된 파일·미추적 파일이 있으면 시작 전에 중단합니다. Git에서 제외한 `.env`, DB, 모델, 사진은 그대로 둡니다.
+- Git 충돌·네트워크 오류·DB 백업 실패 시 강제 덮어쓰기나 자동 병합을 하지 않습니다. 서버를 멈춘 뒤 실패했다면 재시작을 시도하고 실패 단계를 기록합니다.
+- 새 코드 실행 자체에 문제가 있으면 서버가 복구되지 않을 수 있습니다. **코드·DB를 이전 버전으로 자동 롤백하지 않습니다.** 백업과 로그를 확인하고 SSH에서 해결하세요.
+- 버튼은 **코드 업데이트용**입니다. Python 패키지 설치, OS 패키지 변경, 모델 전송, systemd·권한 재설치는 하지 않습니다. 요구사항이나 배포 설정이 바뀐 버전은 [SSH 업데이트](#maintenance)와 서비스 재설치를 진행하세요. 설치된 업데이트 실행기 자체도 서비스 재설치로 반영합니다.
+- DB 백업은 업데이트마다 생기며 자동 삭제하지 않습니다. 저장 공간과 별도 PC 보관을 관리하세요.
+
+**실행 위치: 라파 SSH 터미널 — 오류 또는 장시간 미복구 시 확인**
+
+```bash
+sudo systemctl status equipment-manager-update.service --no-pager -l
+sudo journalctl -u equipment-manager-update.service -n 80 --no-pager
+sudo systemctl status equipment-manager.service --no-pager -l
+sudo journalctl -u equipment-manager.service -n 80 --no-pager
+```
+
+업데이트 작업이 끝난 상태에서 원인을 해결했으면 `sudo systemctl start equipment-manager.service`로 다시 시작합니다. 업데이트 서비스는 일회성 작업이므로 성공 후 `inactive`여도 정상입니다. 상태 파일은 `/var/lib/equipment-manager-update/status.json`에 기록합니다. 강제 종료·전원 차단으로 완료 기록이 없으면 로그를 확인하세요.
+
+작업은 root 소유로 설치된 실행기가 관리하고, Git·DB 백업·설정 검사는 일반 사용자로 실행합니다. 웹 앱에는 고정된 업데이트 타이머 시작 권한만 부여합니다. 실행기 오류·시간 초과 때도 재시작을 시도하도록 systemd의 `ExecStopPost`를 사용합니다. [systemd 공식 서비스 설명](https://github.com/systemd/systemd/blob/main/man/systemd.service.xml)
 
 <a id="usage"></a>
 ## 10. 학생·선생님·개발자 사용법
@@ -818,6 +866,8 @@ scp pi30304@10.177.156.96:~/raspberry-pi-equipment-manager/backups/equipment-YYY
 
 ### 12-3. 코드 업데이트
 
+일반적인 코드 변경은 설치 후 [시스템 화면의 업데이트 버튼](#web-update)을 사용할 수 있습니다. 패키지·서비스 구성 변경이나 문제 복구는 아래 SSH 순서를 사용하세요.
+
 **실행 위치: 라파 SSH 터미널 — systemd로 운영 중인 경우**
 
 ```bash
@@ -837,7 +887,7 @@ curl --noproxy '*' --fail http://127.0.0.1:8080/healthz
 
 `git status`에 직접 수정한 코드가 있거나 `git pull`이 실패하면 내용을 확인하고 해결합니다. `.env`나 DB를 지우거나 `git reset --hard`로 덮어쓰는 방식으로 해결하지 마세요. Git은 코드만 갱신하고 실행 중인 Python을 자동 교체하지 않으므로 서버 재시작이 필요합니다.
 
-서비스 구성·종료 권한이 바뀐 버전이면 [9절 설치기](#service)를 기존 옵션과 같은 조건으로 다시 실행합니다. `.env` 값만 바꿨다면 서비스 `restart`로 반영합니다. 수동 실행 사용자는 기존 서버를 Ctrl+C로 끈 뒤 같은 업데이트·검사를 하고 [4절](#web)의 명령으로 다시 켭니다.
+서비스 구성·종료·업데이트 권한이 바뀐 버전이면 [9절 설치기](#service)를 기존 옵션과 같은 조건으로 다시 실행합니다. `.env` 값만 바꿨다면 서비스 `restart`로 반영합니다. 수동 실행 사용자는 기존 서버를 Ctrl+C로 끈 뒤 같은 업데이트·검사를 하고 [4절](#web)의 명령으로 다시 켭니다.
 
 PC의 가져오기 코드도 별도로 업데이트합니다. PC의 Git 업데이트가 라파 코드를 바꾸거나 그 반대로 동기화되지는 않습니다.
 
@@ -975,6 +1025,7 @@ curl --noproxy '*' --fail http://127.0.0.1:8080/healthz
 | `GPIO_RED_PIN` | `27` | 빨강 LED의 BCM GPIO 번호 |
 | `GPIO_BUZZER_PIN` | `22` | 부저의 BCM GPIO 번호 |
 | `POWER_OFF_ENABLED` | `false`, 설치기가 지정 | 종료 기능 표시·사용 허용 |
+| `PROGRAM_UPDATE_ENABLED` | `false`, 설치기가 지정 | Git 업데이트·재시작 기능 표시·사용 허용 |
 | `SYSTEMD_SERVICE_MANAGED` | `false`, 서비스에서 `true` | 서비스가 관리하는 프로그램인지 구분 |
 
 GPIO 번호는 커넥터의 물리 핀 번호와 다릅니다. GPIO를 사용하지 않으면 기본 `false`로 둡니다. 종료 관련 값은 설치기가 생성한 systemd 환경에서 설정하므로 `.env`에 `true`만 적어 기능을 설치할 수는 없습니다.
@@ -1129,6 +1180,7 @@ node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipmen
 | `equipment_manager/routes/` | 현황·계정·대여·관리·개발자 기능 |
 | `equipment_manager/templates/`, `static/` | 화면·스타일·브라우저 요청 처리 |
 | `deploy/` | systemd 서비스 설치·종료 권한 |
+| `deploy/update_runner.py` | 설치 후 별도 systemd 작업으로 Git 업데이트·DB 백업·재시작 |
 | `scripts/` | 환경 생성, 사진 촬영·전송, 장치 진단, 백업 |
 | `training/` | 클래스 목록, 데이터셋 YAML, Colab 노트북 |
 | `tests/` | 서버·DB·카메라·화면·종료·자원 회귀 검사 |

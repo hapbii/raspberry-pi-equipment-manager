@@ -10,6 +10,7 @@ from equipment_manager import create_app
 from equipment_manager.power import (
     POWER_TIMER, PROGRAM_STOP_TIMER, SYSTEMCTL, poweroff_available,
     program_stop_available, schedule_poweroff, schedule_program_stop,
+    PROGRAM_UPDATE_TIMER, program_update_available, schedule_program_update,
 )
 
 
@@ -68,6 +69,8 @@ class PowerTestCase(unittest.TestCase):
                 self.assertEqual(self.post().status_code, 302)
                 self.assertEqual(self.client.get("/developer/program-stop").status_code, 302)
                 self.assertEqual(self.stop_program().status_code, 302)
+                self.assertEqual(self.client.get("/developer/update").status_code, 302)
+                self.assertEqual(self.client.post("/developer/update").status_code, 302)
                 self.assertNotIn("/developer/program-stop", self.client.get("/").get_data(as_text=True))
                 self.assertNotIn("/developer/poweroff", self.client.get("/").get_data(as_text=True))
         self.run.assert_not_called()
@@ -218,3 +221,49 @@ class PowerTestCase(unittest.TestCase):
         with patch("equipment_manager.routes.developer.program_stop_available", return_value=False):
             self.assertNotIn('href="/developer/program-stop"', self.client.get("/developer").get_data(as_text=True))
         self.run.assert_not_called()
+
+    def test_update_requires_its_own_option_and_managed_service(self):
+        with self.app.app_context(), patch("equipment_manager.power.sys.platform", "linux"), \
+             patch("equipment_manager.power.Path.is_dir", return_value=True), \
+             patch("equipment_manager.power.Path.is_file", return_value=True):
+            self.app.config.update(POWER_OFF_ENABLED=True, SYSTEMD_SERVICE_MANAGED=True, PROGRAM_UPDATE_ENABLED=False)
+            self.assertFalse(program_update_available())
+            with self.assertRaises(RuntimeError):
+                schedule_program_update()
+            self.app.config.update(POWER_OFF_ENABLED=False, PROGRAM_UPDATE_ENABLED=True)
+            self.assertTrue(program_update_available())
+            self.app.config["SYSTEMD_SERVICE_MANAGED"] = False
+            self.assertFalse(program_update_available())
+        self.run.assert_not_called()
+
+    def test_update_confirmation_password_csrf_and_fixed_timer(self):
+        self.login()
+        payload = {"confirmation": "update", "password": "developer-test-password"}
+        self.assertEqual(self.client.get("/developer/update").status_code, 200)
+        self.assertEqual(self.client.post("/developer/update", data=payload).status_code, 503)
+        with patch("equipment_manager.routes.developer.program_update_available", return_value=True), \
+             patch("equipment_manager.power.program_update_available", return_value=True):
+            self.assertEqual(self.client.post("/developer/update", data={**payload, "confirmation": ""}).status_code, 400)
+            self.assertEqual(self.client.post("/developer/update", data={**payload, "password": "wrong"}).status_code, 400)
+            self.app.config["CSRF_ENABLED"] = True
+            self.assertEqual(self.client.post("/developer/update", data=payload).status_code, 302)
+            self.run.assert_not_called()
+            with self.client.session_transaction() as session:
+                payload["csrf_token"] = session["csrf_token"]
+            response = self.client.post("/developer/update", data={**payload, "command": "evil", "path": "/bad"})
+            self.assertEqual(response.status_code, 202)
+            self.assertIn("업데이트를 요청했습니다", response.get_data(as_text=True))
+        self.assertEqual(self.run.call_args.args[0], [SYSTEMCTL, "--no-ask-password", "start", PROGRAM_UPDATE_TIMER])
+        self.run.assert_called_once()
+
+    def test_update_failure_is_not_reported_as_accepted_and_shares_retry_limit(self):
+        self.login()
+        with patch("equipment_manager.routes.developer.program_update_available", return_value=True), \
+             patch("equipment_manager.power.program_update_available", return_value=True), \
+             patch("equipment_manager.routes.developer.poweroff_available", return_value=True):
+            self.run.return_value.returncode = 1
+            data = {"confirmation": "update", "password": "developer-test-password"}
+            self.assertEqual(self.client.post("/developer/update", data=data).status_code, 503)
+            for _ in range(4):
+                self.assertEqual(self.client.post("/developer/update", data={**data, "password": "wrong"}).status_code, 400)
+            self.assertEqual(self.post().status_code, 429)

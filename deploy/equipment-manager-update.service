@@ -1,0 +1,20 @@
+[Unit]
+Description=Update Equipment Manager code and restart its web service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# This runner is installed root-owned, outside the writable Git checkout.
+# Repository code and Git always run as the application user via runuser.
+ExecStart=:/usr/bin/python3 -I /usr/local/lib/equipment-manager/update_runner.py --app-dir "__APP_DIR__" --user __USER__ __MODE_ARGS__
+# Also restart if the runner crashes or systemd kills it on timeout.
+ExecStopPost=/usr/bin/systemctl start equipment-manager.service
+TimeoutStartSec=10min
+TimeoutStopSec=60s
+KillMode=control-group
+StateDirectory=equipment-manager-update
+StateDirectoryMode=0755
+UMask=0022
+PrivateTmp=true
+Environment=PYTHONUNBUFFERED=1

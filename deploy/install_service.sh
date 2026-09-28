@@ -3,18 +3,22 @@ set -euo pipefail
 
 ALLOW_MOCK=()
 POWER_OPTIONS=()
+UPDATE_OPTIONS=()
 ENABLE_POWEROFF=false
+ENABLE_UPDATE=false
 CHECK_ONLY=false
 for argument in "$@"; do
   case "$argument" in
     --allow-mock) ALLOW_MOCK=(--allow-mock) ;;
     --enable-poweroff) ENABLE_POWEROFF=true; POWER_OPTIONS=(--enable-poweroff) ;;
+    --enable-update) ENABLE_UPDATE=true; UPDATE_OPTIONS=(--enable-update) ;;
     --check) CHECK_ONLY=true ;;
     --help|-h)
-      echo "사용법: sudo bash deploy/install_service.sh [--allow-mock] [--enable-poweroff] [--check]"
+      echo "사용법: sudo bash deploy/install_service.sh [--allow-mock] [--enable-poweroff] [--enable-update] [--check]"
       echo "--allow-mock: 모델 없이 현재 mock 설정으로 웹 확인용 설치"
       echo "--check: 설정과 권한만 확인 (서비스 변경·실행 없음)"
       echo "--enable-poweroff: 개발자 화면의 라파 종료·프로그램만 종료 허용 (설치 중에는 종료하지 않음)"
+      echo "--enable-update: 개발자 화면의 Git 업데이트·재시작 허용 (설치 중에는 업데이트하지 않음)"
       exit 0 ;;
     *) echo "알 수 없는 옵션입니다. --help로 사용법을 확인하세요." >&2; exit 1 ;;
   esac
@@ -43,15 +47,31 @@ STOP_TIMER=equipment-manager-stop.timer
 STOP_SERVICE=equipment-manager-stop.service
 POWER_RULE=50-equipment-manager-poweroff.rules
 RULE_TARGET="/etc/polkit-1/rules.d/$POWER_RULE"
-if "$ENABLE_POWEROFF"; then
+UPDATE_TIMER=equipment-manager-update.timer
+UPDATE_SERVICE=equipment-manager-update.service
+UPDATE_RULE=50-equipment-manager-update.rules
+UPDATE_RULE_TARGET="/etc/polkit-1/rules.d/$UPDATE_RULE"
+UPDATE_RUNNER=/usr/local/lib/equipment-manager/update_runner.py
+if "$ENABLE_POWEROFF" || "$ENABLE_UPDATE"; then
   if [[ ! -x /usr/bin/systemctl || ! -d /etc/polkit-1/rules.d ]] || ! command -v pkaction >/dev/null; then
-    echo "종료 기능에는 polkit이 필요합니다. Pi에서 sudo apt install polkitd 를 실행한 뒤 다시 설치하세요." >&2
+    echo "종료·업데이트 기능에는 polkit이 필요합니다. Pi에서 sudo apt install polkitd 를 실행한 뒤 다시 설치하세요." >&2
     exit 1
   fi
   if ! pkaction --action-id org.freedesktop.systemd1.manage-units >/dev/null; then
     echo "systemd의 polkit 권한을 확인하지 못했습니다. polkit 설치 상태를 확인하세요." >&2
     exit 1
   fi
+fi
+if "$ENABLE_UPDATE"; then
+  for update_dependency in /usr/bin/git /usr/bin/python3 /usr/sbin/runuser; do
+    [[ -x "$update_dependency" ]] || { echo "$update_dependency 명령이 필요합니다." >&2; exit 1; }
+  done
+  if [[ "$(runuser -u "$APP_USER" -- git -C "$APP_DIR" rev-parse --show-toplevel)" != "$APP_DIR" ]] ||
+     [[ "$(runuser -u "$APP_USER" -- git -C "$APP_DIR" branch --show-current)" != main ]]; then
+    echo "업데이트는 프로젝트 Git 저장소의 main 브랜치에서 설치해 주세요." >&2
+    exit 1
+  fi
+  runuser -u "$APP_USER" -- git -C "$APP_DIR" remote get-url origin >/dev/null
 fi
 if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
   echo "$APP_DIR/.venv/bin/python이 없습니다. 프로젝트의 가상환경을 먼저 준비하세요." >&2
@@ -60,13 +80,13 @@ fi
 
 STAGING_DIR="$(mktemp -d /etc/systemd/system/.equipment-manager-install.XXXXXX)"
 cleanup() {
-  rm -f -- "$STAGING_DIR/$UNIT" "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$POWER_RULE" "$STAGING_DIR/$STOP_TIMER" "$STAGING_DIR/$STOP_SERVICE"
+  rm -f -- "$STAGING_DIR/$UNIT" "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$POWER_RULE" "$STAGING_DIR/$STOP_TIMER" "$STAGING_DIR/$STOP_SERVICE" "$STAGING_DIR/$UPDATE_TIMER" "$STAGING_DIR/$UPDATE_SERVICE" "$STAGING_DIR/$UPDATE_RULE" "$STAGING_DIR/update_runner.py"
   rmdir -- "$STAGING_DIR"
 }
 trap cleanup EXIT
 runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
   "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
-  --user "$APP_USER" --group "$APP_GROUP" "${ALLOW_MOCK[@]}" "${POWER_OPTIONS[@]}" > "$STAGING_DIR/$UNIT"
+  --user "$APP_USER" --group "$APP_GROUP" "${ALLOW_MOCK[@]}" "${POWER_OPTIONS[@]}" "${UPDATE_OPTIONS[@]}" > "$STAGING_DIR/$UNIT"
 systemd-analyze verify "$STAGING_DIR/$UNIT"
 if "$ENABLE_POWEROFF"; then
   cp -- "$APP_DIR/deploy/$POWER_TIMER" "$STAGING_DIR/$POWER_TIMER"
@@ -77,6 +97,17 @@ if "$ENABLE_POWEROFF"; then
     "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
     --user "$APP_USER" --group "$APP_GROUP" --poweroff-rule > "$STAGING_DIR/$POWER_RULE"
   systemd-analyze verify "$STAGING_DIR/$POWER_TIMER" "$STAGING_DIR/$POWER_SERVICE" "$STAGING_DIR/$STOP_TIMER" "$STAGING_DIR/$STOP_SERVICE"
+fi
+if "$ENABLE_UPDATE"; then
+  cp -- "$APP_DIR/deploy/$UPDATE_TIMER" "$STAGING_DIR/$UPDATE_TIMER"
+  cp -- "$APP_DIR/deploy/update_runner.py" "$STAGING_DIR/update_runner.py"
+  runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
+    "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
+    --user "$APP_USER" --group "$APP_GROUP" "${ALLOW_MOCK[@]}" --update-service > "$STAGING_DIR/$UPDATE_SERVICE"
+  runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
+    "$APP_DIR/deploy/service_config.py" --app-dir "$APP_DIR" \
+    --user "$APP_USER" --group "$APP_GROUP" --update-rule > "$STAGING_DIR/$UPDATE_RULE"
+  systemd-analyze verify "$STAGING_DIR/$UPDATE_TIMER" "$STAGING_DIR/$UPDATE_SERVICE"
 fi
 runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/python" \
   "$APP_DIR/serve.py" --check "${ALLOW_MOCK[@]}"
@@ -115,6 +146,28 @@ elif [[ -f "$RULE_TARGET" ]]; then
   mv -- "$RULE_TARGET" "$power_backup"
   echo "종료 권한 해제 (복구용 파일): $power_backup"
 fi
+if "$ENABLE_UPDATE"; then
+  install -d -m 755 -o root -g root /usr/local/lib/equipment-manager
+  install -m 644 -o root -g root "$STAGING_DIR/update_runner.py" "$UPDATE_RUNNER"
+  for update_file in "$UPDATE_TIMER" "$UPDATE_SERVICE" "$UPDATE_RULE"; do
+    if [[ "$update_file" == "$UPDATE_RULE" ]]; then
+      update_target="$UPDATE_RULE_TARGET"
+    else
+      update_target="/etc/systemd/system/$update_file"
+    fi
+    if [[ -e "$update_target" ]]; then
+      update_backup="$(mktemp "${update_target}.backup.XXXXXX")"
+      cp -p -- "$update_target" "$update_backup"
+      echo "기존 업데이트 설정 백업: $update_backup"
+    fi
+    install -m 644 -o root -g root "$STAGING_DIR/$update_file" "$update_target"
+  done
+  # Do not enable/start the update timer here or at boot.
+elif [[ -f "$UPDATE_RULE_TARGET" ]]; then
+  update_backup="$(mktemp "${UPDATE_RULE_TARGET}.disabled.XXXXXX")"
+  mv -- "$UPDATE_RULE_TARGET" "$update_backup"
+  echo "업데이트 권한 해제 (복구용 파일): $update_backup"
+fi
 systemctl daemon-reload
 systemctl enable "$UNIT"
 # enable --now alone does not restart an already running service.
@@ -142,4 +195,7 @@ echo "이후 .env 수정은 sudo systemctl restart $UNIT 로 반영합니다."
 echo "GitHub 코드는 부팅 시 자동 업데이트하지 않습니다."
 if "$ENABLE_POWEROFF"; then
   echo "개발자 시스템 화면에서 라파 종료 또는 프로그램만 종료를 요청할 수 있습니다. 실제 종료 시험은 모두 사용을 마친 뒤 진행하세요."
+fi
+if "$ENABLE_UPDATE"; then
+  echo "개발자 시스템 화면에서 업데이트를 요청할 수 있습니다. 중지 → DB 백업 → git pull --ff-only origin main → 재시작 순서로 실행합니다."
 fi

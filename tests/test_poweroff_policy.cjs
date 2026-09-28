@@ -24,3 +24,22 @@ test('stop policy grants only the selected user starting either fixed timer', ()
     assert.equal(check('pi30304', 'org.freedesktop.systemd1.manage-unit-files', timer, 'start'), undefined);
   }
 });
+
+test('update policy permits only the app user starting the update timer', () => {
+  let rule;
+  vm.runInNewContext(readFileSync(join(__dirname, '../deploy/50-equipment-manager-update.rules'), 'utf8')
+    .replace('__USER__', 'pi30304'), { polkit: { addRule: fn => { rule = fn; }, Result: { YES: 'yes' } } });
+  const check = (user, unit, verb, id = 'org.freedesktop.systemd1.manage-units') =>
+    rule({ id, lookup: key => ({ unit, verb })[key] }, { user });
+  assert.equal(check('pi30304', 'equipment-manager-update.timer', 'start'), 'yes');
+  for (const user of ['other', 'root', 'teacher']) {
+    assert.equal(check(user, 'equipment-manager-update.timer', 'start'), undefined);
+  }
+  for (const unit of ['equipment-manager-update.service', 'equipment-manager.service', 'ssh.service', undefined]) {
+    assert.equal(check('pi30304', unit, 'start'), undefined);
+  }
+  for (const verb of ['restart', 'stop', 'enable', undefined]) {
+    assert.equal(check('pi30304', 'equipment-manager-update.timer', verb), undefined);
+  }
+  assert.equal(check('pi30304', 'equipment-manager-update.timer', 'start', 'org.freedesktop.systemd1.manage-unit-files'), undefined);
+});

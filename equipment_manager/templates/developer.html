@@ -88,16 +88,29 @@
 
 <section class="panel developer-actions">
   <div>
-    <h2>프로그램 · 라즈베리파이 종료</h2>
-    <p>종료하면 모든 사용자의 사이트 접속과 기자재 인식이 중단됩니다. 모두 사용을 마친 뒤 종료하세요.</p>
-    {% if not poweroff_available %}<p>종료 기능 미설치 또는 비활성화 상태입니다. README 11부의 종료 기능 설치 안내를 확인하세요.</p>{% endif %}
+    <h2>프로그램 업데이트 · 종료</h2>
+    <p>업데이트·종료 중에는 모든 사용자의 사이트 접속과 기자재 인식이 중단됩니다. 모두 사용을 마친 뒤 진행하세요.</p>
+    {% if not poweroff_available %}<p>종료 기능 미설치 또는 비활성화 상태입니다. README 9부의 종료 기능 설치 안내를 확인하세요.</p>{% endif %}
     {% if not program_stop_available %}<p>프로그램만 종료 기능은 최신 설치기로 종료 기능을 설치하고 systemd로 실행할 때 사용할 수 있습니다. 수동 실행은 터미널에서 Ctrl+C로 종료하세요.</p>{% endif %}
+    {% if not program_update_available %}<p>업데이트 기능은 최초 한 번 설치가 필요합니다. 아래 업데이트 안내에서 설치 방법을 확인하세요.</p>{% endif %}
   </div>
   <div class="button-row">
+    <a class="button primary" href="{{ url_for('web.developer_update') }}">{{ '프로그램 업데이트…' if program_update_available else '업데이트 설치 안내' }}</a>
     {% if program_stop_available %}<a class="button ghost" href="{{ url_for('web.developer_program_stop') }}">프로그램만 종료…</a>{% endif %}
     {% if poweroff_available %}<a class="button danger" href="{{ url_for('web.developer_poweroff') }}">라즈베리파이 종료…</a>{% endif %}
   </div>
 </section>
+
+{% if update_status %}
+<section class="panel" id="update-result">
+  <h2>최근 업데이트 결과</h2>
+  <p role="status">{{ update_status.message }}</p>
+  <p>요청 시작: <span data-utc="{{ update_status.started_at }}">{{ update_status.started_at }}</span></p>
+  {% if update_status.finished_at %}<p>결과 기록: <span data-utc="{{ update_status.finished_at }}">{{ update_status.finished_at }}</span></p>{% endif %}
+  {% if update_status.before %}<p>이전 버전 <code>{{ update_status.before[:7] }}</code>{% if update_status.after %} → 받은 버전 <code>{{ update_status.after[:7] }}</code>{% endif %}</p>{% endif %}
+  {% if update_status.state == 'running' %}<p>아직 완료 결과가 기록되지 않았습니다. 잠시 뒤 새로고침하세요. 이 상태가 계속되면 SSH에서 업데이트 로그를 확인하세요.</p>{% endif %}
+</section>
+{% endif %}
 
 <section class="panel developer-actions">
   <div><h2>빠른 이동</h2><p>개발자 계정은 모든 관리 화면과 대여·반납 화면을 사용할 수 있습니다.</p></div>

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from deploy.service_config import render_poweroff_rule, render_service
+from deploy.service_config import render_poweroff_rule, render_service, render_update_rule, render_update_service
 
 
 class ServiceConfigTestCase(unittest.TestCase):
@@ -126,4 +126,32 @@ class ServiceConfigTestCase(unittest.TestCase):
             ["systemd-analyze", "verify", str(unit_path)],
             capture_output=True, text=True, timeout=20,
         )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_update_install_is_independent_and_runner_is_outside_checkout(self):
+        self.assertIn("Environment=PROGRAM_UPDATE_ENABLED=false", self.render(allow_mock=True))
+        self.assertIn("Environment=PROGRAM_UPDATE_ENABLED=true", self.render(allow_mock=True, enable_update=True))
+        self.assertIn("Environment=POWER_OFF_ENABLED=false", self.render(allow_mock=True, enable_update=True))
+        unit = render_update_service(self.app_dir, "pi30304", "pi30304", allow_mock=True)
+        self.assertIn("ExecStart=:/usr/bin/python3 -I /usr/local/lib/equipment-manager/update_runner.py", unit)
+        self.assertIn("kit %%i $HOME", unit)
+        self.assertIn("--user pi30304 --allow-mock", unit)
+        self.assertIn("ExecStopPost=/usr/bin/systemctl start equipment-manager.service", unit)
+        self.assertNotIn("__APP_DIR__", unit)
+        self.assertNotIn("private-value", unit)
+        self.assertNotIn("[Install]", unit)
+        rule = render_update_rule("pi30304")
+        self.assertIn('subject.user === "pi30304"', rule)
+        self.assertIn('equipment-manager-update.timer', rule)
+        with self.assertRaises(ValueError):
+            render_update_rule("root")
+
+    @unittest.skipUnless(os.name == "posix" and shutil.which("systemd-analyze"), "requires Linux systemd tools")
+    def test_update_units_parse_without_starting_any_service(self):
+        service = Path(self.temp.name) / "equipment-manager-update.service"
+        service.write_text(render_update_service(self.app_dir, "pi30304", "pi30304", allow_mock=True))
+        timer = Path(self.temp.name) / "equipment-manager-update.timer"
+        shutil.copyfile(Path(__file__).resolve().parents[1] / "deploy" / timer.name, timer)
+        result = subprocess.run(["systemd-analyze", "verify", str(service), str(timer)],
+                                capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

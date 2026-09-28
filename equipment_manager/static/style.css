@@ -291,6 +291,12 @@ legend { margin-bottom: 7px; color: var(--navy); font-weight: 700; font-size: .8
 .developer-actions { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .developer-actions h2, .developer-actions p { margin-bottom: 4px; }
 .developer-actions p { color: var(--muted); font-size: .82rem; }
+.developer-actions > div:first-child { flex: 1; min-width: 0; }
+.developer-actions > .button-row { flex-wrap: wrap; }
+.developer-actions .button { white-space: nowrap; }
+.update-panel h1 { word-break: keep-all; }
+.update-panel .button-row { flex-wrap: wrap; }
+.update-panel .button-row .button { flex: 1 1 180px; white-space: nowrap; }
 .error-log-heading { align-items: center; }
 .error-log-heading > div p { margin-top: 4px; }
 .error-log-heading form { margin: 0; }

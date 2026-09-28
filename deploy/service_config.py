@@ -22,7 +22,7 @@ def render_poweroff_rule(user: str) -> str:
 
 
 def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = False,
-                   enable_poweroff: bool = False) -> str:
+                   enable_poweroff: bool = False, enable_update: bool = False) -> str:
     app_dir = app_dir.resolve()
     for name in (user, group):
         validate_account(name)
@@ -61,8 +61,25 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
         "__SERVER__": '"' + (app_dir / "serve.py").as_posix().replace("%", "%%") + '"',
         "__MODE_ARGS__": "--allow-mock" if mode == "mock" and allow_mock else "",
         "__POWER_OFF__": "true" if enable_poweroff else "false",
+        "__PROGRAM_UPDATE__": "true" if enable_update else "false",
     }
-    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON|SERVER|MODE_ARGS|POWER_OFF)__", lambda match: replacements[match[0]], template)
+    return re.sub(r"__(?:USER|GROUP|APP_DIR|PYTHON|SERVER|MODE_ARGS|POWER_OFF|PROGRAM_UPDATE)__", lambda match: replacements[match[0]], template)
+
+
+def render_update_service(app_dir: Path, user: str, group: str, *, allow_mock=False) -> str:
+    # Reuse all installation/path/account checks, including literal $ and %.
+    service = render_service(app_dir, user, group, allow_mock=allow_mock)
+    template = (Path(__file__).parent / "equipment-manager-update.service").read_text(encoding="utf-8")
+    replacements = {"__APP_DIR__": app_dir.resolve().as_posix().replace("%", "%%"),
+                    "__USER__": user,
+                    "__MODE_ARGS__": "--allow-mock" if "serve.py\" --allow-mock" in service else ""}
+    return re.sub(r"__(?:APP_DIR|USER|MODE_ARGS)__", lambda match: replacements[match[0]], template)
+
+
+def render_update_rule(user: str) -> str:
+    validate_account(user)
+    template = (Path(__file__).parent / "50-equipment-manager-update.rules").read_text(encoding="utf-8")
+    return template.replace("__USER__", user)
 
 
 def main() -> int:
@@ -73,6 +90,9 @@ def main() -> int:
     parser.add_argument("--allow-mock", action="store_true")
     parser.add_argument("--enable-poweroff", action="store_true")
     parser.add_argument("--poweroff-rule", action="store_true")
+    parser.add_argument("--enable-update", action="store_true")
+    parser.add_argument("--update-service", action="store_true")
+    parser.add_argument("--update-rule", action="store_true")
     args = parser.parse_args()
     try:
         import waitress  # noqa: F401
@@ -82,8 +102,14 @@ def main() -> int:
     if args.poweroff_rule:
         sys.stdout.write(render_poweroff_rule(args.user))
         return 0
+    if args.update_rule:
+        sys.stdout.write(render_update_rule(args.user))
+        return 0
+    if args.update_service:
+        sys.stdout.write(render_update_service(args.app_dir, args.user, args.group, allow_mock=args.allow_mock))
+        return 0
     unit = render_service(args.app_dir, args.user, args.group, allow_mock=args.allow_mock,
-                          enable_poweroff=args.enable_poweroff)
+                          enable_poweroff=args.enable_poweroff, enable_update=args.enable_update)
     sys.stdout.write(unit)
     return 0
 

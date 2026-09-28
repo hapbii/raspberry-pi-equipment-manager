@@ -1,0 +1,10 @@
+[Unit]
+Description=Delayed code update requested by Equipment Manager developer
+
+[Timer]
+OnActiveSec=3s
+AccuracySec=1s
+Unit=equipment-manager-update.service
+RemainAfterElapse=no
+
+# Only a confirmed developer request starts this timer; never enable on boot.
