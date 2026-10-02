@@ -1,0 +1,14 @@
+# 20261002_yolofile의 classes.txt 순서입니다. 기존 라벨의 이름과 ID를 유지합니다.
+# 사진과 TXT를 train/val/test로 나눈 뒤 실제 데이터셋 위치에 맞게 path를 수정하세요.
+path: /content/drive/MyDrive/equipment_dataset
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: breadborad
+  1: wheel
+  2: motor
+  3: pirsensor
+  4: bimsensor
+  5: raspberrypi
