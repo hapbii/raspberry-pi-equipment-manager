@@ -6,7 +6,9 @@ import sqlite3
 import tempfile
 import unittest
 import weakref
+import traceback
 from pathlib import Path
+from unittest.mock import patch
 
 from flask import g
 
@@ -14,6 +16,7 @@ from equipment_manager import create_app
 from equipment_manager.db import close_db, get_db, set_device_status
 from equipment_manager.inventory import add_equipment, create_scan_session
 from equipment_manager.vision.detector import YoloDetector
+from equipment_manager.vision.camera import OpenCvFrameSource
 from equipment_manager.vision.types import DetectionError
 
 
@@ -104,6 +107,67 @@ def detector_for_test(detector_type=YoloDetector):
 
 
 class InferenceBoundaryTest(unittest.TestCase):
+    def test_backend_errors_release_images_even_when_chained_tracebacks_are_kept(self):
+        references = []
+
+        class Model:
+            predictor = None
+
+            def predict(self, **kwargs):
+                image = kwargs['source']
+                references.append(weakref.ref(image))
+                try:
+                    raise ValueError('backend operation failed')
+                except ValueError as cause:
+                    raise RuntimeError('backend prediction failed') from cause
+
+        detector = detector_for_test()
+        detector._model = Model()
+        errors = []
+        for _ in range(100):
+            image = Frame()
+            try:
+                detector._predict_best(image)
+            except DetectionError as error:
+                errors.append(error)
+            finally:
+                image = None
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+        diagnostic = ''.join(traceback.format_exception(errors[0]))
+        self.assertIn('backend operation failed', diagnostic)
+        self.assertIn('backend prediction failed', diagnostic)
+        self.assertIn('predict', diagnostic)
+
+    def test_camera_read_errors_release_internal_buffers_in_retained_tracebacks(self):
+        references = []
+
+        class Camera:
+            def isOpened(self):
+                return True
+
+            def read(self):
+                buffer = Frame()
+                references.append(weakref.ref(buffer))
+                raise RuntimeError('camera read failed')
+
+            def release(self):
+                pass
+
+        source = OpenCvFrameSource(0, 640, 480)
+        errors = []
+        with patch('equipment_manager.vision.camera.logger.info'):
+            for _ in range(100):
+                source._camera = Camera()
+                try:
+                    next(source.frames(1))
+                except DetectionError as error:
+                    errors.append(error)
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+
     def test_model_load_failure_does_not_pin_frames_in_retained_tracebacks(self):
         class MissingModel(YoloDetector):
             def _load_model(self):

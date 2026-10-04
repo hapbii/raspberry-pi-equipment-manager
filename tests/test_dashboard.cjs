@@ -94,6 +94,17 @@ test('hidden tab aborts in-flight fetch and ignores its late successful response
   assert.equal(ui.requests.length, 2);
 });
 
+test('pagehide clears the request deadline before an aborted fetch settles', async () => {
+  const ui = setup();
+  assert.equal(ui.timers.size, 1);
+  ui.fire('pagehide');
+  assert.equal(ui.requests[0].signal.aborted, true);
+  assert.equal(ui.timers.size, 0);
+  ui.abort();
+  await settle();
+  assert.equal(ui.timers.size, 0);
+});
+
 test('100 page restore cycles never overlap requests or accumulate timers', async () => {
   const ui = setup();
   for (let i = 0; i < 100; i++) {

@@ -11,6 +11,7 @@ from werkzeug.exceptions import HTTPException
 from equipment_manager.vision.camera import fresh_frame
 from equipment_manager.vision.types import DetectionError
 from equipment_manager.web_server import run_web_server
+from equipment_manager.resources import release_error_frames
 
 
 class PreviewBusy(Exception):
@@ -50,6 +51,9 @@ class PreviewSession:
                 finally:
                     frame = None
             return result
+        except BaseException as exc:
+            release_error_frames(exc)
+            raise
         finally:
             # Iterator cleanup can fail after JPEG encoding. A retained
             # traceback must not keep that response buffer alive.

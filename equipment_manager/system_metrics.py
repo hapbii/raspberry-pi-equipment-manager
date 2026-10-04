@@ -1,7 +1,33 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
+
+
+@lru_cache(maxsize=1)
+def _windows_memory_api():
+    """Keep one structure/pointer type and API binding for all RSS reads."""
+    import ctypes
+    from ctypes import wintypes
+
+    class ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [
+            ('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+            ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+            ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t),
+            ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t), ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+            ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    psapi = ctypes.WinDLL('psapi', use_last_error=True)
+    get_process = kernel32.GetCurrentProcess
+    get_process.restype = wintypes.HANDLE
+    get_memory = psapi.GetProcessMemoryInfo
+    get_memory.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessMemoryCounters), wintypes.DWORD]
+    get_memory.restype = wintypes.BOOL
+    return ProcessMemoryCounters, get_process, get_memory
 
 
 def current_rss_mb() -> float | None:
@@ -18,36 +44,10 @@ def current_rss_mb() -> float | None:
     if os.name == "nt":
         try:
             import ctypes
-            from ctypes import wintypes
-
-            class ProcessMemoryCounters(ctypes.Structure):
-                _fields_ = [
-                    ("cb", wintypes.DWORD),
-                    ("PageFaultCount", wintypes.DWORD),
-                    ("PeakWorkingSetSize", ctypes.c_size_t),
-                    ("WorkingSetSize", ctypes.c_size_t),
-                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                    ("PagefileUsage", ctypes.c_size_t),
-                    ("PeakPagefileUsage", ctypes.c_size_t),
-                ]
-
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            psapi = ctypes.WinDLL("psapi", use_last_error=True)
-            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-            psapi.GetProcessMemoryInfo.argtypes = [
-                wintypes.HANDLE,
-                ctypes.POINTER(ProcessMemoryCounters),
-                wintypes.DWORD,
-            ]
-            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
-
-            counters = ProcessMemoryCounters()
+            counters_type, get_process, get_memory = _windows_memory_api()
+            counters = counters_type()
             counters.cb = ctypes.sizeof(counters)
-            handle = kernel32.GetCurrentProcess()
-            if psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+            if get_memory(get_process(), ctypes.byref(counters), counters.cb):
                 return round(counters.WorkingSetSize / (1024 * 1024), 1)
         except (AttributeError, OSError, ctypes.ArgumentError):
             return None

@@ -14,16 +14,25 @@ INDICATOR_CLOSED_KEY = "status_indicator_closed"
 
 
 def _close_devices(devices) -> None:
+    interrupted = None
     for device in devices:
         # A disconnected pin can fail to switch off but must still be closed.
         try:
             device.off()
-        except Exception:
-            logger.debug("GPIO device off during cleanup failed", exc_info=True)
+        except BaseException as exc:
+            if isinstance(exc, Exception):
+                logger.debug("GPIO device off during cleanup failed", exc_info=True)
+            elif interrupted is None:
+                interrupted = exc
         try:
             device.close()
-        except Exception:
-            logger.debug("GPIO device close failed", exc_info=True)
+        except BaseException as exc:
+            if isinstance(exc, Exception):
+                logger.debug("GPIO device close failed", exc_info=True)
+            elif interrupted is None:
+                interrupted = exc
+    if interrupted is not None:
+        raise interrupted
 
 
 class NullIndicator:
@@ -126,15 +135,19 @@ class GpioIndicator:
                 return
             self._closed = True
             self._stop_event.set()
-        if self._worker.is_alive() and threading.current_thread() is not self._worker:
-            self._worker.join(timeout=2)
-        while True:
+        try:
+            if self._worker.is_alive() and threading.current_thread() is not self._worker:
+                self._worker.join(timeout=2)
+        finally:
             try:
-                self._events.get_nowait()
-                self._events.task_done()
-            except queue.Empty:
-                break
-        _close_devices((self.green, self.red, self.buzzer))
+                while True:
+                    try:
+                        self._events.get_nowait()
+                        self._events.task_done()
+                    except queue.Empty:
+                        break
+            finally:
+                _close_devices((self.green, self.red, self.buzzer))
 
 
 def init_hardware(app) -> None:

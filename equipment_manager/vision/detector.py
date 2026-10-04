@@ -11,6 +11,8 @@ from typing import Protocol
 
 from .camera import FrameSource, build_frame_source
 from .types import Detection, DetectionError, PreflightResult
+from ..resources import release_error_frames
+from .inference_runtime import prepare_predictor
 
 
 logger = logging.getLogger(__name__)
@@ -76,10 +78,25 @@ class YoloDetector:
             logger.debug("Torch thread configuration was not applied", exc_info=True)
 
         logger.info("Loading YOLO model from %s", self.model_path)
+        model = None
         try:
-            self._model = YOLO(str(self.model_path))
-        except Exception as exc:
+            model = YOLO(str(self.model_path))
+            prepare_predictor(model, self.model_path, {
+                'imgsz': self.image_size, 'conf': self.confidence,
+                'max_det': self.max_detections, 'device': 'cpu', 'verbose': False,
+                'save': False,
+            }, self.inference_threads)
+            self._model = model
+        except BaseException as exc:
+            release_error_frames(exc)
+            if model is not None:
+                self._clear_predictor_frame_references(model)
+                model.predictor = None
+            if not isinstance(exc, Exception):
+                raise
             raise DetectionError(f"YOLO 모델 로딩에 실패했습니다: {exc}") from exc
+        finally:
+            model = None
         return self._model
 
     def _predict_best(self, frame) -> tuple[str, float] | None:
@@ -110,16 +127,20 @@ class YoloDetector:
             score = float(boxes.conf[best_index].item())
             raw_label = str(result.names[class_id])
             return self.aliases.get(raw_label, raw_label), score
-        except DetectionError:
-            raise
-        except Exception as exc:
+        except BaseException as exc:
+            release_error_frames(exc)
+            if isinstance(exc, DetectionError) or not isinstance(exc, Exception):
+                raise
             raise DetectionError(f"YOLO 추론에 실패했습니다: {exc}") from exc
         finally:
             try:
                 if result_stream is not None and hasattr(result_stream, "close"):
                     try:
                         result_stream.close()
-                    except Exception:
+                    except BaseException as exc:
+                        release_error_frames(exc)
+                        if not isinstance(exc, Exception):
+                            raise
                         logger.debug("YOLO result stream close failed", exc_info=True)
             finally:
                 # An interrupted stream close must not retain predictor images.
@@ -140,7 +161,10 @@ class YoloDetector:
                 close = getattr(frames, "close", None)
                 if close is not None:
                     close()
-            except Exception:
+            except BaseException as exc:
+                release_error_frames(exc)
+                if not isinstance(exc, Exception):
+                    raise
                 logger.debug("Camera frame iterator close failed", exc_info=True)
             finally:
                 frames = close = None

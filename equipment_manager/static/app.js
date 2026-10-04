@@ -66,6 +66,7 @@
     let dashboardTimer = null;
     let dashboardStopped = document.hidden;
     let dashboardController = null;
+    let dashboardDeadline = null;
 
     async function refreshDashboard() {
       dashboardTimer = null;
@@ -73,6 +74,7 @@
       const controller = new AbortController();
       dashboardController = controller;
       const timeout = window.setTimeout(() => controller.abort(), 4000);
+      dashboardDeadline = timeout;
       try {
         const response = await fetch("/api/status", {
           cache: "no-store",
@@ -114,6 +116,7 @@
           : error.message;
       } finally {
         window.clearTimeout(timeout);
+        dashboardDeadline = null;
         dashboardController = null;
         if (!dashboardStopped) {
           dashboardTimer = window.setTimeout(refreshDashboard, 5000);
@@ -125,6 +128,8 @@
       dashboardStopped = true;
       if (dashboardTimer !== null) window.clearTimeout(dashboardTimer);
       dashboardTimer = null;
+      if (dashboardDeadline !== null) window.clearTimeout(dashboardDeadline);
+      dashboardDeadline = null;
       if (dashboardController !== null) dashboardController.abort();
     }
 

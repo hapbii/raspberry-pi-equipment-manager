@@ -166,11 +166,16 @@ def capture_samples(
 
 
 def _save_frame(backend: str, cv2, frame, path: Path) -> None:
+    from equipment_manager.resources import release_error_frames
+
     try:
         # Picamera2 RGB888 arrays and OpenCV frames are BOTH BGR in memory.
         # Swapping channels here would make training photos differ from inference.
         if not cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92]):
             raise DetectionError(f"사진 저장에 실패했습니다: {path}")
+    except BaseException as exc:
+        release_error_frames(exc)
+        raise
     finally:
         # Even a retained exception traceback must not keep our image references.
         frame = None

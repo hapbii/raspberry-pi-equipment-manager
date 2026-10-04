@@ -102,6 +102,25 @@ class GpioIndicatorTestCase(unittest.TestCase):
                 GpioIndicator(17, 27, 22)
         self.assertEqual(FakeDevice.instances, [])
 
+    def test_interrupted_gpio_cleanup_still_closes_all_devices(self):
+        indicator = GpioIndicator(17, 27, 22)
+        with patch.object(indicator.green, 'off', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                indicator.close()
+        self.assertTrue(all(device.closed for device in FakeDevice.instances))
+        self.assertFalse(indicator._worker.is_alive())
+
+    def test_interrupted_worker_join_still_closes_devices_and_drains_queue(self):
+        indicator = GpioIndicator(17, 27, 22)
+        try:
+            with patch.object(indicator._worker, 'join', side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    indicator.close()
+            self.assertTrue(all(device.closed for device in FakeDevice.instances))
+            self.assertEqual(indicator._events.qsize(), 0)
+        finally:
+            indicator._worker.join(timeout=2)
+
     def test_app_shutdown_prevents_late_requests_from_reopening_gpio(self):
         with tempfile.TemporaryDirectory() as directory:
             app = create_app({

@@ -114,6 +114,21 @@ class CapturePreviewTests(unittest.TestCase):
         self.cv.succeed = True
         self.session.take_frame()
 
+    def test_retained_encoder_errors_do_not_pin_camera_frames(self):
+        def fail_encoding(extension, image, options):
+            raise RuntimeError('encoder failure')
+
+        errors = []
+        with patch.object(self.cv, 'imencode', fail_encoding):
+            for _ in range(100):
+                try:
+                    self.session.take_frame()
+                except RuntimeError as error:
+                    errors.append(error)
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(ref() is None for ref in self.source.references))
+        self.assertFalse(self.session._lock.locked())
+
     def test_save_failure_does_not_increment_and_next_request_can_retry(self):
         def fail_save(frame, index):
             try:

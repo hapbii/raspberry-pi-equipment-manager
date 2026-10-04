@@ -4,7 +4,7 @@
 
 학생은 가입 승인 후 본인 학번으로 이용하고, 선생님은 기자재·학생·거래를 관리합니다. 개발자는 시스템 점검과 종료 기능까지 사용할 수 있습니다. **개별 물품의 고유번호를 구분하거나 사진 속 물품 개수를 자동으로 세지는 않습니다. 카메라 앞에 하나씩 놓고 웹 화면에서 한 번에 1개를 처리합니다.**
 
-## 현재 진행 상태 — 2026-10-02
+## 현재 진행 상태 — 2026-10-04
 
 `20261002_yolofile`의 사진 **542장 모두 YOLO TXT 라벨링을 완료**했습니다. 기존 수동 라벨 196개를 보존하고 346개를 추가했으며, 추가 박스의 시각 검토와 전체 LabelImg 읽기 검사를 마쳤습니다. 원본 사진과 기존 `classes.txt`는 수정하지 않았습니다. 사진·라벨·검토 이미지·백업은 `.gitignore`에 따라 로컬에 보관합니다.
 
@@ -17,9 +17,13 @@
 | 4 | `bimsensor` | 79 |
 | 5 | `raspberrypi` | 94 |
 
-현재 PC 라벨링 도구는 **LabelImg**입니다. 카메라 방향은 하드웨어로 수정했으므로 이번 사진은 원본 방향으로 사용하며, 추가로 180도 회전하지 않습니다. 현재 SSH 주소는 `pi30304@172.30.12.100`, 웹 주소는 `http://172.30.12.100:8080`입니다.
+현재 PC 라벨링 도구는 **LabelImg**입니다. 카메라 방향은 하드웨어로 수정했으므로 이번 사진은 원본 방향으로 사용하며, 추가로 180도 회전하지 않습니다. 현재 SSH 주소는 `pi30304@10.143.210.96`, 웹 주소는 `http://10.143.210.96:8080`입니다. 네트워크가 바뀌면 IP를 다시 확인하세요.
 
-**다음 단계는 학습·검증·시험 데이터 분리와 Colab 학습입니다. 모델 학습은 아직 실행하지 않았습니다.** 이번 데이터는 [현재 6종 학습 설정](training/dataset_current_6class.yaml)과 [학습 안내](training/README.md)를 사용하세요. 아래의 X-AnyLabeling·회전·7종 클래스 설명은 이전 구성용이므로 이번 데이터의 클래스 ID와 이름을 그 예시로 덮어쓰지 마세요.
+**Colab T4에서 YOLO11n 학습을 완료하고 `best.pt`와 입력 크기 320의 NCNN 모델을 확보했습니다.** 학습 433장·검증 109장으로 나눴으며, 46 epoch 후 종료된 학습의 최적 epoch는 31입니다. 입력 416의 검증 mAP50은 0.995, mAP50–95는 0.8601입니다. 같은 장소·날짜의 검증 결과이므로 새 촬영 사진으로 운영 환경을 확인해야 합니다. 모델 형식별 측정 방법과 결과는 [PT·NCNN 비교 안내](training/MODEL_COMPARISON.md)를 확인하세요.
+
+이번 데이터는 [현재 6종 학습 설정](training/dataset_current_6class.yaml)과 [학습 안내](training/README.md)를 사용하세요. 아래의 X-AnyLabeling·회전·7종 클래스 설명은 이전 구성용이므로 이번 데이터의 클래스 ID와 이름을 그 예시로 덮어쓰지 마세요.
+
+2026-10-04 전체 코드·메모리 점검에서 오류가 보관한 이미지 참조, GPIO 중단 정리, 화면 이탈 타이머와 PT·NCNN CPU 스레드 설정을 보완했습니다. 검사 결과와 관측 RSS는 [리팩토링 점검 보고서](docs/REFACTORING_AUDIT_2026-10-04.md)를 확인하세요. 이번 코드 점검은 PC에서 수행했으며 운영 라파에 배포하거나 `.env` 모드를 바꾸지 않았습니다.
 
 ## 필요한 내용부터 찾기
 
@@ -58,10 +62,10 @@ PC 화면에 열린 창이어도 SSH 접속 뒤에는 **라파에서** 명령이
 | 항목 | 예시 |
 |---|---|
 | 라파 SSH 사용자 | `pi30304` |
-| 라파 IP | `10.177.156.96` |
+| 라파 IP | `10.143.210.96` |
 | 라파 프로젝트 | `/home/pi30304/raspberry-pi-equipment-manager` |
 | PC 프로젝트 | `README.md`와 `scripts` 폴더가 있는 로컬 작업 폴더 |
-| 웹 주소 | `http://10.177.156.96:8080` |
+| 웹 주소 | `http://10.143.210.96:8080` |
 
 명령은 한 블록 안에서 위에서 아래로 실행합니다. 오류가 나면 해결한 뒤 다음 단계로 넘어가세요. 비밀번호 입력 시 글자나 별표가 표시되지 않는 것은 정상입니다.
 
@@ -119,7 +123,7 @@ Pi 한 대 구성으로 설계되어 있습니다. 학교 어디서나 조회하
 **실행 위치: PC PowerShell**
 
 ```powershell
-ssh pi30304@10.177.156.96
+ssh pi30304@10.143.210.96
 ```
 
 처음 접속 시 장치 정보를 확인하고 연결을 승인합니다. 이후 사용할 SSH 비밀번호와 웹 관리자 비밀번호는 서로 다른 계정의 값입니다.
@@ -153,7 +157,7 @@ ls -lh camera-test.jpg
 **실행 위치: PC PowerShell — 시험 사진을 PC 다운로드 폴더로 복사**
 
 ```powershell
-scp pi30304@10.177.156.96:~/camera-test.jpg "$env:USERPROFILE\Downloads\camera-test.jpg"
+scp pi30304@10.143.210.96:~/camera-test.jpg "$env:USERPROFILE\Downloads\camera-test.jpg"
 ```
 
 USB 카메라는 `rpicam` 대신 OpenCV로 확인합니다. 라파에서 `ls -l /dev/video*`로 장치를 조회할 수 있지만, 모든 `/dev/video*`가 USB 카메라는 아닙니다. 프로젝트 설치 후 [촬영 단계](#capture)에서 `--backend opencv --camera-index 0`으로 한 장을 시험하세요.
@@ -249,13 +253,13 @@ python serve.py --allow-mock
 python serve.py
 ```
 
-`Serving on http://0.0.0.0:8080`이 나오면 PC 브라우저에서 **`http://10.177.156.96:8080`**을 엽니다. `0.0.0.0`은 수신 설정이며 접속 주소가 아닙니다. 기본 구성은 HTTP이므로 `https://`로 입력하지 않습니다.
+`Serving on http://0.0.0.0:8080`이 나오면 PC 브라우저에서 **`http://10.143.210.96:8080`**을 엽니다. `0.0.0.0`은 수신 설정이며 접속 주소가 아닙니다. 기본 구성은 HTTP이므로 `https://`로 입력하지 않습니다.
 
 수동 실행 중에는 해당 터미널을 열어 둡니다. 종료는 **Ctrl+C**입니다. `python -m waitress ... wsgi:app` 대신 `serve.py`를 사용해야 배포 검사와 종료 처리를 같은 경로로 거칩니다. SSH를 닫아도 계속 운영하려면 [systemd 설치](#service)를 사용하세요.
 
 | 화면 | PC 브라우저 주소 | 접근 권한 |
 |---|---|---|
-| 기자재 현황 | `http://10.177.156.96:8080/` | 로그인 없이 조회 |
+| 기자재 현황 | `http://10.143.210.96:8080/` | 로그인 없이 조회 |
 | 학생 가입 / 로그인 | `/register` / `/login` | 학생 |
 | 본인 대여 내역 / 비밀번호 | `/my-loans` / `/account/password` | 로그인한 학생 |
 | 대여·반납 | `/scan` | 승인된 학생·관리자 |
@@ -277,7 +281,7 @@ python serve.py
 > **실행 위치: Windows PC PowerShell — 첫 번째 창**
 
 ```powershell
-ssh pi30304@10.177.156.96
+ssh pi30304@10.143.210.96
 ```
 
 처음 연결하는 주소면 SSH가 표시하는 장치 정보를 확인하고 연결합니다. 비밀번호는 입력해도 화면에 나타나지 않습니다. 접속 후 다음 명령부터는 라파에서 실행됩니다. 브라우저·8081 터널은 필요하지 않습니다.
@@ -362,19 +366,19 @@ git clone https://github.com/hapbii/raspberry-pi-equipment-manager.git
 cd raspberry-pi-equipment-manager
 ```
 
-### 5-4. PC로 사진 가져오기와 180도 회전
+### 5-4. PC로 사진 가져오기
 
 > **실행 위치: Windows PC PowerShell — 프로젝트 폴더**
 
 ```powershell
-python scripts/download_photos.py --host 10.177.156.96
+python scripts/download_photos.py --host 10.143.210.96 --rotation 0
 ```
 
 SSH 비밀번호를 입력하고 엔터를 누르면 다음 순서로 진행됩니다. 비밀번호를 코드·파일에 저장하지 않습니다.
 
 1. 라파 `datasets/raw/` 아래의 기자재별·촬영 회차별 폴더를 찾습니다.
 2. JPG/JPEG/PNG 사진을 PC의 임시 파일로 한 장씩 받습니다.
-3. PC에서 **180도 회전**해 같은 폴더 구조로 저장합니다. 라파 원본은 수정·삭제하지 않습니다.
+3. 현재 카메라 방향에 맞춰 **추가 회전 없이** 같은 폴더 구조로 저장합니다. 라파 원본은 수정·삭제하지 않습니다. 다시 카메라가 거꾸로 설치된 경우에만 `--rotation 180`을 사용합니다.
 4. `training/classes.txt`도 복사하고 완료 장수와 PC 저장 위치를 표시합니다.
 
 기본 저장 위치는 **워크스페이스가 아니라 PC 다운로드 폴더**입니다. 현재 PC는 아래 경로이며, 다른 PC에서는 `happy`가 해당 Windows 사용자 이름으로 바뀝니다.
@@ -395,7 +399,7 @@ C:\Users\happy\Downloads\equipment-photos-날짜시간-식별자\
 
 ```powershell
 $captureFolder = Join-Path (Get-Location).Path ("datasets\labeling-photos-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-python scripts/download_photos.py --host 10.177.156.96 --output "$captureFolder"
+python scripts/download_photos.py --host 10.143.210.96 --rotation 0 --output "$captureFolder"
 ```
 
 성공 메시지에 나온 폴더를 파일 탐색기로 엽니다. `datasets`는 GitHub 업로드에서 제외됩니다. 매번 새 폴더가 생기며 이미 있는 폴더를 지정하면 덮어쓰지 않고 중단합니다. 증분 복사가 아니라 **매번 새 복사본**을 만드는 방식입니다.
@@ -403,12 +407,12 @@ python scripts/download_photos.py --host 10.177.156.96 --output "$captureFolder"
 > **실행 위치: Windows PC PowerShell — 한 종류만 가져오는 선택 예시**
 
 ```powershell
-python scripts/download_photos.py --host 10.177.156.96 --class-name raspberry_pi
+python scripts/download_photos.py --host 10.143.210.96 --rotation 0 --class-name raspberry_pi
 ```
 
-전송 중 Ctrl+C나 통신 오류가 발생하면 완성된 사진은 남고 임시 파일은 정리합니다. `transfer.json`의 `status`가 `complete`이면 전체 완료, `incomplete`이면 일부 완료입니다. 재실행은 새 폴더로 처음부터 복사합니다. JPG는 품질 95로 재압축됩니다. 카메라 방향을 고쳐 회전할 필요가 없으면 `--rotation 0`을 붙입니다.
+전송 중 Ctrl+C나 통신 오류가 발생하면 완성된 사진은 남고 임시 파일은 정리합니다. `transfer.json`의 `status`가 `complete`이면 전체 완료, `incomplete`이면 일부 완료입니다. 재실행은 새 폴더로 처음부터 복사합니다. JPG는 품질 95로 재압축됩니다. 도구의 기본 회전값은 180이므로 현재 하드웨어에서는 위 예시처럼 `--rotation 0`을 명시합니다.
 
-**이 단계에서 만든 PC 사진으로 라벨링하세요.** 나중에 라파의 거꾸로 된 사진으로 교체하거나 사진만 다시 회전하면 박스 좌표가 맞지 않습니다. 기존 TXT/JSON 라벨은 가져오기 대상이 아닙니다.
+**이 단계에서 만든 PC 사진으로 라벨링하세요.** 라벨링 후 사진 방향만 바꾸면 박스 좌표가 맞지 않습니다. 기존 TXT/JSON 라벨은 가져오기 대상이 아닙니다.
 
 <a id="labeling"></a>
 ## 6. X-AnyLabeling 라벨링과 Colab 학습
@@ -491,7 +495,7 @@ equipment_dataset/
 6. 마지막 다운로드 셀에서 `best.pt`와 `best_ncnn_model.zip`을 PC에 보관합니다. `/content/runs` 결과는 Colab 세션이 끝나면 사라질 수 있으므로 다운로드·Drive 보관을 확인하세요. NCNN ZIP은 라파로 보내기 전에 폴더로 풉니다.
 7. [모델 적용·실제 장치 검사](#model)로 진행합니다. 자세한 데이터 구조는 [학습 안내](training/README.md)를 참고하세요.
 
-가져오기 도구는 **학습용 PC 사진만 회전**합니다. 실제 인식용 카메라 입력은 아직 기존 방향이므로 모델 적용 시 입력 방향도 맞추거나 뒤집힌 방향을 포함해 학습·검증해야 합니다.
+현재는 카메라 방향을 하드웨어로 수정했습니다. 이번 학습 사진과 실제 인식 입력 모두 원본 방향을 사용하며, 사진을 가져올 때 추가 회전을 적용하지 않습니다. 이전 회전 예시는 하드웨어 방향이 다른 경우에만 사용하세요.
 
 <a id="model"></a>
 ## 7. 학습 모델을 라파에 적용하기
@@ -510,7 +514,7 @@ mkdir -p models
 **실행 위치: PC PowerShell — `best.pt`가 다운로드 폴더에 있을 때**
 
 ```powershell
-scp "$env:USERPROFILE\Downloads\best.pt" pi30304@10.177.156.96:~/raspberry-pi-equipment-manager/models/
+scp "$env:USERPROFILE\Downloads\best.pt" pi30304@10.143.210.96:~/raspberry-pi-equipment-manager/models/
 ```
 
 NCNN을 사용하려면 ZIP을 먼저 `best_ncnn_model` 폴더로 풀고, 파일 하나가 아닌 **폴더 전체**를 가져갑니다. Colab 노트북은 NCNN을 입력 크기 320으로 내보냅니다.
@@ -518,7 +522,7 @@ NCNN을 사용하려면 ZIP을 먼저 `best_ncnn_model` 폴더로 풀고, 파일
 **실행 위치: PC PowerShell — NCNN을 선택할 때 위 명령 대신**
 
 ```powershell
-scp -r "$env:USERPROFILE\Downloads\best_ncnn_model" pi30304@10.177.156.96:~/raspberry-pi-equipment-manager/models/
+scp -r "$env:USERPROFILE\Downloads\best_ncnn_model" pi30304@10.143.210.96:~/raspberry-pi-equipment-manager/models/
 ```
 
 **실행 위치: 라파 SSH 터미널 — 복사 결과 확인**
@@ -826,8 +830,8 @@ ss -ltnp 'sport = :8080'
 **실행 위치: PC PowerShell — 라파까지의 포트 연결 확인**
 
 ```powershell
-Test-NetConnection 10.177.156.96 -Port 22
-Test-NetConnection 10.177.156.96 -Port 8080
+Test-NetConnection 10.143.210.96 -Port 22
+Test-NetConnection 10.143.210.96 -Port 8080
 ```
 
 | 결과 | 다음 확인 |
@@ -876,7 +880,7 @@ ls -lt backups
 **실행 위치: PC PowerShell — 출력된 실제 백업 파일명으로 바꿔 실행**
 
 ```powershell
-scp pi30304@10.177.156.96:~/raspberry-pi-equipment-manager/backups/equipment-YYYYMMDD-HHMMSS-ffffff.db "$env:USERPROFILE\Downloads\"
+scp pi30304@10.143.210.96:~/raspberry-pi-equipment-manager/backups/equipment-YYYYMMDD-HHMMSS-ffffff.db "$env:USERPROFILE\Downloads\"
 ```
 
 `YYYYMMDD...`는 실제 파일명이 아닙니다. 라파에 표시된 이름으로 바꿉니다. DB에는 학생 정보와 로그인 관련 데이터가 있으므로 공개 폴더에 올리지 마세요. `.env`, 모델, 사진·라벨은 DB 백업에 포함되지 않으며 따로 보관합니다.

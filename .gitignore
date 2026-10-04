@@ -14,3 +14,5 @@ runs/
 datasets/
 data/
 tmp/
+output/equipment_training_*/
+Ultralytics/

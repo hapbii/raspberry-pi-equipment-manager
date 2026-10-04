@@ -8,6 +8,7 @@ from contextlib import closing, contextmanager
 from typing import Protocol
 
 from .types import CameraError
+from ..resources import release_error_frames
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,9 @@ def fresh_frame(source: FrameSource):
                     return
                 frame = None
             raise CameraError("카메라에서 촬영 프레임을 받지 못했습니다.")
+    except BaseException as exc:
+        release_error_frames(exc)
+        raise
     finally:
         frame = frames = None
 
@@ -90,6 +94,7 @@ class Picamera2FrameSource:
             if self.warmup_seconds:
                 time.sleep(self.warmup_seconds)
         except BaseException as exc:
+            release_error_frames(exc)
             try:
                 camera.close()
             except Exception:
@@ -135,7 +140,10 @@ class Picamera2FrameSource:
                         yield frame
                     finally:
                         frame = None
-            except Exception as exc:
+            except BaseException as exc:
+                release_error_frames(exc)
+                if not isinstance(exc, Exception):
+                    raise
                 self.close()
                 raise CameraError(f"Picamera2 프레임 촬영에 실패했습니다: {exc}") from exc
 
@@ -200,7 +208,8 @@ class OpenCvFrameSource:
                 raise CameraError(f"USB 카메라 {self.index}번을 열 수 없습니다.")
             for _ in range(self.warmup_frames):
                 camera.grab()
-        except BaseException:
+        except BaseException as exc:
+            release_error_frames(exc)
             try:
                 camera.release()
             except Exception:
@@ -222,7 +231,10 @@ class OpenCvFrameSource:
                     finally:
                         # Do not keep the old image while allocating the next.
                         frame = None
-            except Exception as exc:
+            except BaseException as exc:
+                release_error_frames(exc)
+                if not isinstance(exc, Exception):
+                    raise
                 self.close()
                 raise CameraError(f"USB 카메라 촬영에 실패했습니다: {exc}") from exc
 
