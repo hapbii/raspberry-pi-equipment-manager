@@ -27,14 +27,17 @@ class BoundedErrorHandler(RotatingFileHandler):
         if self._closed:
             return
         try:
-            text = self.format(record)
+            # Formatter caches the full traceback in exc_text. Work on our own
+            # copy so buffered handlers do not retain a second, unbounded string
+            # on the shared record after this handler has truncated its output.
+            bounded = copy(record)
+            text = self.format(bounded)
             encoded = text.encode("utf-8", errors="replace")
             if len(encoded) > self.record_limit:
                 suffix = b"\n[log entry truncated]"
                 text = encoded[: self.record_limit - len(suffix)].decode(
                     "utf-8", errors="ignore"
                 ) + suffix.decode("ascii")
-            bounded = copy(record)
             bounded.msg, bounded.args = text, ()
             bounded._bounded_error_text = True
             bounded.exc_info = bounded.exc_text = bounded.stack_info = None

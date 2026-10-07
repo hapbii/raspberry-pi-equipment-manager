@@ -1,4 +1,6 @@
 import sys
+import gc
+import weakref
 import tempfile
 import unittest
 from pathlib import Path
@@ -42,6 +44,30 @@ def fake_model(backend, torch):
 
 
 class InferenceRuntimeTest(unittest.TestCase):
+    def test_retained_setup_failures_release_partially_initialized_predictors(self):
+        references, errors = [], []
+
+        class Predictor:
+            def __init__(self, **kwargs):
+                self.buffer = bytearray(640 * 480 * 3)
+                references.append(weakref.ref(self))
+
+            def setup_model(self, **kwargs):
+                raise RuntimeError("backend setup failed")
+
+        model = SimpleNamespace(_smart_load=lambda key: Predictor, overrides={},
+                                callbacks={}, model="unused", predictor=None)
+        with patch.dict(sys.modules, {"torch": Mock()}):
+            for _ in range(100):
+                try:
+                    prepare_predictor(model, Path("best.pt"), {}, 2)
+                except RuntimeError as error:
+                    errors.append(error)
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+        self.assertIsNone(model.predictor)
+
     def test_pt_reapplies_threads_after_ultralytics_device_setup(self):
         torch = Mock()
         model = fake_model(SimpleNamespace(), torch)

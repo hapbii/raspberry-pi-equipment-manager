@@ -14,7 +14,7 @@ ssh pi30304@10.177.156.96
 
 비밀번호는 화면에 표시되지 않아도 입력됩니다. 다음부터 `exit` 전까지는 **라파에서 실행하는 명령**입니다. IP가 바뀌면 라파에서 `hostname -I`로 확인하세요.
 
-이 안내의 기본 방식은 **실시간 화면 없이 엔터로 촬영**하는 것입니다. 브라우저나 SSH 터널은 필요하지 않습니다. 처음부터 PC 전송·라벨링까지 따라 하려면 [메인 README 촬영·전송 순서](../README.md#capture)를 보세요.
+이 안내의 기본 방식은 **실시간 화면 없이 엔터로 촬영**하는 것입니다. 브라우저나 SSH 터널은 필요하지 않습니다. 촬영·전송 절차는 이 문서에만 보관합니다.
 
 **실행 위치: 라파 SSH 터미널**
 
@@ -136,7 +136,7 @@ $captureFolder = Join-Path (Get-Location).Path ("datasets\labeling-photos-" + (G
 python scripts/download_photos.py --host 10.177.156.96 --output "$captureFolder"
 ```
 
-`datasets`는 GitHub 업로드에서 제외됩니다. PC에서 프로젝트 폴더를 여는 방법과 패키지 준비는 [README PC 준비](../README.md#pc-transfer-setup)를 참고하세요.
+`datasets`는 GitHub 업로드에서 제외됩니다. PC 파일 탐색기에서 프로젝트 폴더를 열고 주소창에 `powershell`을 입력하면 그 폴더에서 명령을 실행할 수 있습니다. 패키지는 이 문서의 PC 전송 준비 단계에서 설치합니다.
 
 지정한 폴더가 이미 존재하면 중단합니다. 새 이름을 쓰세요. 기본 라파 프로젝트 경로는 `/home/pi30304/raspberry-pi-equipment-manager`입니다. 다른 사용자·경로라면 `--user 사용자명 --remote-project /절대/프로젝트/경로`를 지정하세요. 나중에 카메라 방향을 고쳐 회전이 필요 없어지면 `--rotation 0`을 붙입니다.
 

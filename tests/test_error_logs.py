@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,23 @@ from equipment_manager.error_logs import ErrorLogStore
 
 
 class ErrorLogStoreTestCase(unittest.TestCase):
+    def test_formatting_does_not_cache_large_traceback_on_shared_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ErrorLogStore(Path(directory) / "errors.log", max_bytes=65536,
+                                  backup_count=2, display_bytes=8192)
+            try:
+                try:
+                    raise RuntimeError("large failure " + "x" * 100000)
+                except RuntimeError:
+                    record = logging.LogRecord("equipment_manager", logging.ERROR,
+                                               "test", 1, "failed", (), sys.exc_info())
+                store._handler.handle(record)
+                self.assertTrue(record.exc_text is None, "shared record cached an unbounded traceback")
+                self.assertIn("[log entry truncated]", store.snapshot()["text"])
+                self.assertLessEqual(store.path.stat().st_size, 16500)
+            finally:
+                store.close()
+
     def test_oversized_records_are_bounded_and_closed_handler_cannot_reopen(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "errors.log"

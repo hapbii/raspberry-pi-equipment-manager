@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import gc
 import types
 import unittest
 import weakref
@@ -29,6 +30,28 @@ class FakeCapture:
 
 
 class OpenCvFrameSourceTestCase(unittest.TestCase):
+    def test_retained_release_interrupts_do_not_keep_camera_buffers(self):
+        references, errors = [], []
+
+        class Camera:
+            def __init__(self):
+                self.buffer = bytearray(640 * 480 * 3)
+
+            def release(self):
+                raise KeyboardInterrupt("release interrupted")
+
+        source = OpenCvFrameSource(0, 640, 480)
+        for _ in range(100):
+            source._camera = Camera()
+            references.append(weakref.ref(source._camera))
+            try:
+                source.close()
+            except KeyboardInterrupt as error:
+                errors.append(error)
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+
     def test_previous_frame_is_released_before_next_camera_read(self):
         class Frame:
             pass
@@ -95,6 +118,31 @@ class OpenCvFrameSourceTestCase(unittest.TestCase):
 
 
 class Picamera2FrameSourceTestCase(unittest.TestCase):
+    def test_retained_shutdown_interrupts_do_not_keep_camera_buffers(self):
+        references, errors = [], []
+
+        class Camera:
+            def __init__(self):
+                self.buffer = bytearray(640 * 480 * 3)
+
+            def stop(self):
+                raise KeyboardInterrupt("stop interrupted")
+
+            def close(self):
+                pass
+
+        source = Picamera2FrameSource(640, 480)
+        for _ in range(100):
+            source._camera, source._started = Camera(), True
+            references.append(weakref.ref(source._camera))
+            try:
+                source.close()
+            except KeyboardInterrupt as error:
+                errors.append(error)
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+
     def test_capture_timeout_cancels_pending_job_before_stop_and_close(self):
         camera = Mock()
         camera.capture_array.side_effect = TimeoutError()

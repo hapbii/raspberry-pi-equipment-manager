@@ -10,17 +10,26 @@ def prepare_predictor(model, model_path: Path, prediction_args: dict, threads: i
     """Load once and keep configured resources on this model's predictor."""
     import torch
 
-    predictor = model._smart_load('predictor')(
-        overrides={**model.overrides, **prediction_args}, _callbacks=model.callbacks,
-    )
-    predictor.setup_model(model=model.model, verbose=False)
-    auto_backend = predictor.model
-    backend = getattr(auto_backend, 'backend', auto_backend)
-    if getattr(auto_backend, 'ncnn', False) or getattr(backend, 'net', None) is not None:
-        _configure_ncnn(backend, model_path, threads)
-    # select_device('cpu') resets this during setup_model. Set it afterward.
-    torch.set_num_threads(threads)
-    model.predictor = predictor
+    predictor = auto_backend = backend = None
+    try:
+        predictor = model._smart_load('predictor')(
+            overrides={**model.overrides, **prediction_args}, _callbacks=model.callbacks,
+        )
+        predictor.setup_model(model=model.model, verbose=False)
+        auto_backend = predictor.model
+        backend = getattr(auto_backend, 'backend', auto_backend)
+        if getattr(auto_backend, 'ncnn', False) or getattr(backend, 'net', None) is not None:
+            _configure_ncnn(backend, model_path, threads)
+        # select_device('cpu') resets this during setup_model. Set it afterward.
+        torch.set_num_threads(threads)
+        model.predictor = predictor
+    except BaseException as exc:
+        release_error_frames(exc)
+        raise
+    finally:
+        # On failure the predictor was never adopted by the model. Neither its
+        # completed library frames nor this retained traceback may own buffers.
+        predictor = auto_backend = backend = model = None
 
 
 def _configure_ncnn(backend, model_path: Path, threads: int) -> None:
@@ -47,7 +56,10 @@ def _configure_ncnn(backend, model_path: Path, threads: int) -> None:
             raise RuntimeError('NCNN 모델의 CPU 실행 설정에 실패했습니다.')
     except BaseException as exc:
         release_error_frames(exc)
-        net.clear()
+        try:
+            net.clear()
+        finally:
+            net = old_net = backend = None
         raise
     backend.net = net
     old_net.clear()

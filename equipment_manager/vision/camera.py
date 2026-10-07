@@ -157,14 +157,24 @@ class Picamera2FrameSource:
                 if started:
                     try:
                         camera.stop()
-                    except Exception:
+                    except Exception as exc:
+                        release_error_frames(exc)
                         logger.debug("Picamera2 stop failed", exc_info=True)
+            except BaseException as exc:
+                release_error_frames(exc)
+                raise
             finally:
                 # stop() can be interrupted too; never skip closing the handle.
                 try:
-                    camera.close()
-                except Exception:
-                    logger.debug("Picamera2 close failed", exc_info=True)
+                    try:
+                        camera.close()
+                    except BaseException as exc:
+                        release_error_frames(exc)
+                        if not isinstance(exc, Exception):
+                            raise
+                        logger.debug("Picamera2 close failed", exc_info=True)
+                finally:
+                    camera = None
             logger.info("Picamera2 closed")
 
 
@@ -244,8 +254,13 @@ class OpenCvFrameSource:
             if camera is not None:
                 try:
                     camera.release()
-                except Exception:
+                except BaseException as exc:
+                    release_error_frames(exc)
+                    if not isinstance(exc, Exception):
+                        raise
                     logger.debug("OpenCV camera release failed", exc_info=True)
+                finally:
+                    camera = None
                 logger.info("OpenCV camera closed")
 
 
