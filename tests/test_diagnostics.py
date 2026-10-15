@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import io
 from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -42,6 +43,33 @@ class DiagnosticsTestCase(unittest.TestCase):
 
     def run_soak(self):
         return memory_soak_test.run_memory_check(self.app, self.args)
+
+    def test_invalid_memory_options_cannot_pass_or_open_camera(self):
+        for name, value in (
+            ("scans", 0), ("scans", -1), ("interval", float("nan")),
+            ("interval", float("inf")), ("interval", -1),
+            ("max_growth_mb", float("nan")), ("max_growth_mb", float("inf")),
+            ("max_growth_mb", -1),
+        ):
+            with self.subTest(name=name, value=value):
+                self.service.reset_mock()
+                self.shutdown.reset_mock()
+                args = SimpleNamespace(**vars(self.args))
+                setattr(args, name, value)
+                with self.assertRaises(ValueError):
+                    memory_soak_test.run_memory_check(self.app, args)
+                self.shutdown.assert_called_once_with()
+                self.service.preflight.assert_not_called()
+                self.service.detect.assert_not_called()
+
+    def test_invalid_cli_options_are_rejected_before_app_creation(self):
+        with patch("sys.argv", ["memory_soak_test.py", "--max-growth-mb", "nan"]), \
+                patch("sys.stderr", new=io.StringIO()), \
+                patch("scripts.memory_soak_test.create_app") as factory:
+            with self.assertRaises(SystemExit) as caught:
+                memory_soak_test.main()
+            self.assertEqual(caught.exception.code, 2)
+            factory.assert_not_called()
 
     def test_successful_measurement_closes_once(self):
         self.assertEqual(self.run_soak(), 0)

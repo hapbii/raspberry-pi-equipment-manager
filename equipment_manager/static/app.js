@@ -63,6 +63,10 @@
 
   const inventoryGrid = document.querySelector("#inventory-grid");
   if (inventoryGrid) {
+    const displayedEquipmentIds = new Set(
+      [...document.querySelectorAll('#inventory-grid [data-equipment-id]')]
+        .map(card => card.dataset.equipmentId)
+    );
     let dashboardTimer = null;
     let dashboardStopped = document.hidden;
     let dashboardController = null;
@@ -83,6 +87,14 @@
         const data = await response.json();
         if (dashboardStopped || controller.signal.aborted) return;
         if (!response.ok || !data.ok) throw new Error(data.error || "현황을 읽지 못했습니다.");
+        if (data.inventory.length !== displayedEquipmentIds.size
+            || data.inventory.some(item => !displayedEquipmentIds.has(String(item.id)))) {
+          // Cards, the kind count and empty state share the server template.
+          // Refresh it when the set changes; quantity-only polls stay in place.
+          stopDashboard();
+          window.location.reload();
+          return;
+        }
         data.inventory.forEach((item) => {
           const card = inventoryGrid.querySelector(`[data-equipment-id="${item.id}"]`);
           if (!card) return;

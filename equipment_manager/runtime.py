@@ -6,6 +6,7 @@ import threading
 from .auth import cleanup_expired_auth
 from .db import cleanup_expired_scan_sessions, set_device_status
 from .system_metrics import current_rss_mb
+from .resources import release_error_frames
 
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,8 @@ class HeartbeatService:
                         rss,
                         self.memory_warning_mb,
                     )
-            except Exception:
+            except Exception as exc:
+                release_error_frames(exc)
                 logger.exception("Heartbeat update failed")
             finally:
                 app = None
@@ -64,9 +66,15 @@ class HeartbeatService:
     def _maintain(app) -> None:
         # Each task owns its DB context. A failed cleanup cannot strand a
         # transaction/connection or prevent the other maintenance tasks.
-        for task in (set_device_status, cleanup_expired_scan_sessions, cleanup_expired_auth):
-            try:
-                with app.app_context():
-                    task()
-            except Exception:
-                logger.exception("Background maintenance failed: %s", task.__name__)
+        try:
+            for task in (set_device_status, cleanup_expired_scan_sessions, cleanup_expired_auth):
+                try:
+                    with app.app_context():
+                        task()
+                except Exception as exc:
+                    release_error_frames(exc)
+                    logger.exception("Background maintenance failed: %s", task.__name__)
+        finally:
+            # Buffered logs may retain this still-active frame during logging.
+            # Drop its app reference after the final maintenance task as well.
+            app = None

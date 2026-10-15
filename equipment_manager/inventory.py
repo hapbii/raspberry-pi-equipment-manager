@@ -231,6 +231,8 @@ def commit_transaction(
     owner_key: str | None = None,
 ) -> TransactionResult:
     student_id = _validate_student_id(student_id)
+    if not isinstance(scan_token, str) or not re.fullmatch(r"[0-9a-f]{32}", scan_token):
+        raise InventoryError("유효하지 않은 인식 결과입니다. 다시 촬영해 주세요.")
     if action not in {"loan", "return"}:
         raise InventoryError("대여 또는 반납을 선택해 주세요.")
     if type(quantity) is not int or quantity < 1 or quantity > 20:

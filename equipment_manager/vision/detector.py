@@ -44,7 +44,7 @@ class MockDetector:
 
 class YoloDetector:
     def __init__(self, config: dict, frame_source: FrameSource | None = None):
-        self.model_path = Path(config["YOLO_MODEL_PATH"])
+        self.model_path = Path(config["YOLO_MODEL_PATH"]).expanduser()
         self.image_size = max(160, min(int(config["YOLO_IMAGE_SIZE"]), 1280))
         self.confidence = max(0.01, min(float(config["YOLO_CONFIDENCE"]), 1.0))
         self.frame_count = max(1, min(int(config["YOLO_FRAME_COUNT"]), 30))
@@ -90,8 +90,7 @@ class YoloDetector:
         except BaseException as exc:
             release_error_frames(exc)
             if model is not None:
-                self._clear_predictor_frame_references(model)
-                model.predictor = None
+                self._release_predictor(model)
             if not isinstance(exc, Exception):
                 raise
             raise DetectionError(f"YOLO 모델 로딩에 실패했습니다: {exc}") from exc
@@ -169,22 +168,55 @@ class YoloDetector:
             finally:
                 frames = close = None
 
+    def _release_predictor(self, model) -> None:
+        """Discard a predictor after failed setup or final model shutdown."""
+        try:
+            try:
+                self._clear_predictor_frame_references(model)
+            finally:
+                # Dropping the whole predictor must still run when clearing
+                # one of its image attributes is interrupted.
+                try:
+                    model.predictor = None
+                except Exception as exc:
+                    release_error_frames(exc)
+                    logger.debug("YOLO predictor release failed", exc_info=True)
+        except BaseException as exc:
+            release_error_frames(exc)
+            raise
+        finally:
+            model = None
+
     @staticmethod
     def _clear_predictor_frame_references(model) -> None:
         """Ultralytics predictor에 남는 마지막 프레임 참조를 해제합니다."""
-        predictor = getattr(model, "predictor", None)
-        if predictor is None:
-            return
-        for attribute in ("batch", "dataset", "results", "plotted_img"):
-            if hasattr(predictor, attribute):
+        predictor = interrupted = None
+        try:
+            predictor = getattr(model, "predictor", None)
+            if predictor is None:
+                return
+            for attribute in ("batch", "dataset", "results", "plotted_img"):
                 try:
-                    setattr(predictor, attribute, None)
-                except Exception:
-                    logger.debug(
-                        "YOLO predictor attribute release failed: %s",
-                        attribute,
-                        exc_info=True,
-                    )
+                    if hasattr(predictor, attribute):
+                        setattr(predictor, attribute, None)
+                except BaseException as exc:
+                    release_error_frames(exc)
+                    if isinstance(exc, Exception):
+                        logger.debug(
+                            "YOLO predictor attribute release failed: %s",
+                            attribute,
+                            exc_info=True,
+                        )
+                    elif interrupted is None:
+                        interrupted = exc
+            if interrupted is not None:
+                raise interrupted
+        except BaseException as exc:
+            release_error_frames(exc)
+            raise
+        finally:
+            # The cleanup traceback itself must not own a model or predictor.
+            model = predictor = None
 
     def detect(self, category_hint: str | None = None) -> Detection:
         del category_hint
@@ -272,14 +304,17 @@ class YoloDetector:
     def close(self) -> None:
         model, self._model = self._model, None
         try:
-            self.frame_source.close()
+            try:
+                self.frame_source.close()
+            finally:
+                if model is not None:
+                    self._release_predictor(model)
+        except BaseException as exc:
+            release_error_frames(exc)
+            raise
         finally:
-            if model is not None:
-                self._clear_predictor_frame_references(model)
-                try:
-                    model.predictor = None
-                except Exception:
-                    logger.debug("YOLO predictor release failed", exc_info=True)
+            # Detachment can itself be interrupted. A retained shutdown error
+            # must not keep the removed model or its native backend alive.
             model = None
             gc.collect()
             logger.info("YOLO detector released")

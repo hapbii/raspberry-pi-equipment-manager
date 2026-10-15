@@ -6,6 +6,8 @@ import threading
 
 from flask import current_app
 
+from .resources import release_error_frames
+
 
 logger = logging.getLogger(__name__)
 INDICATOR_LOCK_KEY = "status_indicator_lock"
@@ -15,24 +17,26 @@ INDICATOR_CLOSED_KEY = "status_indicator_closed"
 
 def _close_devices(devices) -> None:
     interrupted = None
-    for device in devices:
-        # A disconnected pin can fail to switch off but must still be closed.
-        try:
-            device.off()
-        except BaseException as exc:
-            if isinstance(exc, Exception):
-                logger.debug("GPIO device off during cleanup failed", exc_info=True)
-            elif interrupted is None:
-                interrupted = exc
-        try:
-            device.close()
-        except BaseException as exc:
-            if isinstance(exc, Exception):
-                logger.debug("GPIO device close failed", exc_info=True)
-            elif interrupted is None:
-                interrupted = exc
-    if interrupted is not None:
-        raise interrupted
+    device = None
+    try:
+        for device in devices:
+            # Always attempt both operations on every device, even when off()
+            # fails or cleanup is interrupted. Keep the first interrupt.
+            for operation in ("off", "close"):
+                try:
+                    getattr(device, operation)()
+                except BaseException as exc:
+                    release_error_frames(exc)
+                    if isinstance(exc, Exception):
+                        logger.debug("GPIO device %s during cleanup failed", operation, exc_info=True)
+                    elif interrupted is None:
+                        interrupted = exc
+        if interrupted is not None:
+            raise interrupted
+    finally:
+        # Closed GPIO wrappers may still own Python-side buffers. Do not pin
+        # the whole device collection through a saved cleanup traceback.
+        devices = device = None
 
 
 class NullIndicator:
@@ -67,25 +71,32 @@ class GpioIndicator:
             daemon=True,
         )
         devices = []
+        devices_adopted = False
         try:
-            green = LED(green_pin)
-            devices.append(green)
-            red = LED(red_pin)
-            devices.append(red)
-            buzzer = Buzzer(buzzer_pin)
-            devices.append(buzzer)
-        except BaseException:
-            _close_devices(devices)
-            raise
-
-        self.green = green
-        self.red = red
-        self.buzzer = buzzer
-        try:
+            devices.append(LED(green_pin))
+            devices.append(LED(red_pin))
+            devices.append(Buzzer(buzzer_pin))
+            self.green, self.red, self.buzzer = devices
+            devices_adopted = True
             self._worker.start()
-        except BaseException:
-            self.close()
+        except BaseException as exc:
+            release_error_frames(exc)
+            try:
+                if devices_adopted:
+                    self.close()
+                else:
+                    _close_devices(devices)
+            except BaseException as cleanup_error:
+                release_error_frames(cleanup_error)
+                raise
+            finally:
+                # A failed constructor has no owner to dispose of it later.
+                # The worker's bound target forms a collectable cycle only
+                # after this retained traceback drops the partial instance.
+                self = None
             raise
+        finally:
+            devices = None
 
     def _run(self) -> None:
         while not self._stop_event.is_set():

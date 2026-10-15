@@ -44,7 +44,7 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
         if not allow_mock:
             raise ValueError("모델 없이 웹 확인용으로 설치하려면 --allow-mock 옵션을 붙이세요. 실제 운영은 DETECTOR_MODE=yolo로 설정하세요.")
     elif mode == "yolo":
-        model = Path(values.get("YOLO_MODEL_PATH") or "models/best.pt")
+        model = Path(values.get("YOLO_MODEL_PATH") or "models/best.pt").expanduser()
         if not model.is_absolute():
             model = app_dir / model
         if not model.exists() or not os.access(model, os.R_OK):

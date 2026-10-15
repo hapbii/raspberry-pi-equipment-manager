@@ -197,6 +197,65 @@ class FakeFrameIterator:
 
 
 class DetectionServiceTestCase(unittest.TestCase):
+    def test_end_timing_failure_preserves_original_inference_error(self):
+        service = DetectionService(FailingDetector())
+        try:
+            with patch("equipment_manager.vision.service.perf_counter", side_effect=[
+                10, RuntimeError("timer unavailable"),
+            ]), patch("equipment_manager.vision.service.logger.warning"):
+                with self.assertRaises(DetectionError):
+                    service.detect()
+            status = service.status()
+            self.assertEqual(status["attempt_count"], 1)
+            self.assertEqual(status["failure_count"], 1)
+            self.assertIsNone(status["last_duration_ms"])
+            self.assertFalse(status["busy"])
+        finally:
+            service.close()
+
+    def test_success_does_not_fail_during_final_timing_update(self):
+        service = DetectionService(FakeDetector())
+        try:
+            with patch("equipment_manager.vision.service.perf_counter", side_effect=[
+                10, 10.1, RuntimeError("timer unavailable"),
+            ]):
+                result = service.detect()
+            self.assertEqual(result.label, "멀티미터")
+            self.assertEqual(service.status()["scan_count"], 1)
+            self.assertEqual(service.status()["last_duration_ms"], result.duration_ms)
+        finally:
+            service.close()
+
+    def test_start_timing_failure_is_counted_and_next_attempt_recovers(self):
+        service = DetectionService(FakeDetector())
+        try:
+            with patch("equipment_manager.vision.service.perf_counter", side_effect=RuntimeError("no clock")):
+                with self.assertRaises(RuntimeError):
+                    service.detect()
+            self.assertEqual(service.status()["failure_count"], 1)
+            self.assertEqual(service.status()["attempt_count"], 1)
+            self.assertFalse(service.status()["busy"])
+            service.detect()
+            self.assertEqual(service.status()["scan_count"], 1)
+            self.assertEqual(service.status()["failure_count"], 1)
+        finally:
+            service.close()
+
+    def test_status_timestamp_failure_does_not_discard_detection(self):
+        service = DetectionService(FakeDetector())
+        try:
+            with patch("equipment_manager.vision.service.utc_now", side_effect=RuntimeError("no timestamp")), \
+                    patch("equipment_manager.vision.service.logger.warning"):
+                self.assertEqual(service.detect().label, "멀티미터")
+            status = service.status()
+            self.assertEqual(status["scan_count"], 1)
+            self.assertEqual(status["failure_count"], 0)
+            self.assertEqual(status["check_state"], "ready")
+            self.assertIsNone(status["checked_at"])
+            self.assertFalse(status["busy"])
+        finally:
+            service.close()
+
     def test_cleanup_failure_does_not_strand_lock_or_replace_result(self):
         detector = FakeDetector()
         service = DetectionService(detector, gc_interval_scans=1)

@@ -24,7 +24,7 @@
 <section id="inventory-grid" class="inventory-grid" aria-live="polite">
   {% for item in inventory %}
   <article class="inventory-card" data-equipment-id="{{ item.id }}">
-    <div class="card-top"><span class="equipment-icon">{{ item.name[0] }}</span><span class="availability-badge">사용 가능</span></div>
+    <div class="card-top"><span class="equipment-icon">{{ item.name[0] }}</span><span class="availability-badge{{ ' empty' if item.available_qty <= 0 else '' }}">{{ '사용 가능' if item.available_qty > 0 else '대여 불가' }}</span></div>
     <h2>{{ item.name }}</h2>
     <strong class="available-number">{{ item.available_qty }}</strong><span class="total-number"> / {{ item.total_qty }}개</span>
     <div class="meter"><span style="width: {{ (item.available_qty / item.total_qty * 100) if item.total_qty else 0 }}%"></span></div>

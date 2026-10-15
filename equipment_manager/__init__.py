@@ -12,6 +12,7 @@ from .db import close_db, init_app_database
 from .error_logs import ErrorLogStore
 from .hardware import INDICATOR_KEY, close_hardware, init_hardware
 from .runtime import HeartbeatService
+from .resources import release_error_frames
 from .vision import build_detection_service
 
 
@@ -56,13 +57,17 @@ def create_app(test_config: dict | None = None) -> Flask:
                         service = app.extensions.pop(key, None)
                         if service is not None:
                             getattr(service, method)()
-                except Exception:
+                except Exception as exc:
+                    release_error_frames(exc)
                     app.logger.exception("Failed to close %s service", key)
                 except BaseException as exc:
+                    release_error_frames(exc)
                     # A second Ctrl+C must not skip the remaining camera/GPIO/
                     # log cleanup. Propagate it only after every closer ran.
                     if interrupted is None:
                         interrupted = exc
+                finally:
+                    service = None
             if interrupted is not None:
                 raise interrupted
 
@@ -93,8 +98,17 @@ def create_app(test_config: dict | None = None) -> Flask:
             heartbeat = HeartbeatService(app)
             app.extensions["heartbeat_service"] = heartbeat
             heartbeat.start()
-    except BaseException:
-        shutdown_services()
+    except BaseException as exc:
+        release_error_frames(exc)
+        try:
+            shutdown_services()
+        except BaseException as cleanup_error:
+            release_error_frames(cleanup_error)
+            raise
+        finally:
+            # Startup failed: there is no returned app owning these resources.
+            # Also detach the app captured by its shutdown callback.
+            app = error_log_store = heartbeat = None
         raise
 
     if not app.config.get("TESTING", False):

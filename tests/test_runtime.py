@@ -2,14 +2,49 @@ from __future__ import annotations
 
 import unittest
 import threading
+import gc
+import weakref
 from unittest.mock import patch
 
-from flask import Flask
+from flask import Flask, has_app_context
 
 from equipment_manager.runtime import HeartbeatService
 
 
 class HeartbeatServiceTestCase(unittest.TestCase):
+    def test_retained_maintenance_logs_do_not_keep_buffers_or_disposed_apps(self):
+        references, calls = [], []
+
+        class Buffer:
+            def __init__(self):
+                self.pixels = bytearray(640 * 480 * 3)
+
+        def failing_task():
+            buffer = Buffer()
+            references.append(weakref.ref(buffer))
+            raise RuntimeError("maintenance failed")
+
+        def next_task():
+            self.assertTrue(has_app_context())
+            calls.append(True)
+
+        with patch("equipment_manager.runtime.set_device_status", failing_task), patch(
+            "equipment_manager.runtime.cleanup_expired_scan_sessions", next_task
+        ), patch("equipment_manager.runtime.cleanup_expired_auth", next_task), self.assertLogs(
+            "equipment_manager.runtime", level="ERROR"
+        ) as captured:
+            for _ in range(100):
+                app = Flask(__name__)
+                references.append(weakref.ref(app))
+                HeartbeatService._maintain(app)
+                app = None
+        gc.collect()
+        # Keep raw LogRecord.exc_info alive, as a buffered handler would.
+        self.assertEqual(len(captured.records), 100)
+        self.assertEqual(len(calls), 200)
+        self.assertFalse(has_app_context())
+        self.assertTrue(all(reference() is None for reference in references))
+
     def test_cleanup_failure_does_not_skip_other_jobs_or_retain_context(self):
         from flask import has_app_context
         app = Flask(__name__)

@@ -4,14 +4,24 @@ const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-function setup(hidden = false) {
+function setup(hidden = false, equipmentIds = []) {
   const timers = new Map();
   const events = new Map();
   const elements = new Map();
   const requests = [];
   let nextTimer = 0;
+  let reloads = 0;
   const element = id => {
-    if (!elements.has(id)) elements.set(id, { textContent: '', querySelector() { return null; } });
+    if (!elements.has(id)) elements.set(id, {
+      textContent: '', style: {}, classList: {toggle() {}},
+      querySelector(selector) {
+        if (id === '#inventory-grid') {
+          const match = selector.match(/data-equipment-id="(\d+)"/);
+          if (!match || !equipmentIds.some(value => String(value) === match[1])) return null;
+        }
+        return element(`${id} ${selector}`);
+      },
+    });
     return elements.get(id);
   };
   const on = (name, fn) => {
@@ -26,11 +36,17 @@ function setup(hidden = false) {
       if (selector.startsWith('meta')) return { content: 'csrf' };
       return element(selector);
     },
-    querySelectorAll() { return []; },
+    querySelectorAll(selector) {
+      if (selector === '#inventory-grid [data-equipment-id]') {
+        return equipmentIds.map(id => ({dataset: {equipmentId: String(id)}}));
+      }
+      return [];
+    },
   };
   const context = {
     document, AbortController, Intl, Date, Set,
     window: {
+      location: {reload() { reloads++; }},
       addEventListener: on,
       setTimeout(fn) { timers.set(++nextTimer, fn); return nextTimer; },
       clearTimeout(id) { timers.delete(id); },
@@ -43,7 +59,7 @@ function setup(hidden = false) {
   };
   vm.runInNewContext(readFileSync(join(__dirname, '../equipment_manager/static/app.js'), 'utf8'), context);
   return {
-    timers, requests, element,
+    timers, requests, element, get reloads() { return reloads; },
     hide() { document.hidden = true; events.get('visibilitychange')(); },
     show() { document.hidden = false; events.get('visibilitychange')(); },
     fire(name, event = {}) { events.get(name)(event); },
@@ -52,8 +68,8 @@ function setup(hidden = false) {
       timers.delete(id);
       fn();
     },
-    answer(request = requests.at(-1)) {
-      request.resolve({ ok: true, json: async () => ({ ok: true, inventory: [],
+    answer(request = requests.at(-1), inventory = []) {
+      request.resolve({ ok: true, json: async () => ({ ok: true, inventory,
         device: { online: true, last_seen: null }, server_time: null }) });
     },
     abort(request = requests.at(-1)) {
@@ -65,6 +81,36 @@ function setup(hidden = false) {
 }
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('equipment additions and removals refresh server-rendered cards and counts', async () => {
+  for (const [initial, updated] of [[[], [1]], [[1], []], [[1], [2]]]) {
+    const ui = setup(false, initial);
+    ui.answer(undefined, updated.map(id => ({id})));
+    await settle();
+    assert.equal(ui.reloads, 1);
+    assert.equal(ui.timers.size, 0);
+    assert.equal(ui.requests.length, 1);
+  }
+});
+
+test('unchanged equipment does not reload the dashboard', async () => {
+  const ui = setup(false, [1]);
+  ui.answer(undefined, [{id: 1, available_qty: 2, total_qty: 3, loaned_qty: 1, loan_period_days: 7}]);
+  await settle();
+  assert.equal(ui.reloads, 0);
+  assert.equal(ui.timers.size, 1);
+  assert.equal(ui.element('#device-state').textContent, '서버 온라인');
+  assert.equal(ui.element('#inventory-grid [data-equipment-id="1"] .available-number').textContent, 2);
+});
+
+test('late inventory changes after hiding the page never trigger reload', async () => {
+  const ui = setup();
+  ui.hide();
+  ui.answer(undefined, [{id: 1}]);
+  await settle();
+  assert.equal(ui.reloads, 0);
+  assert.equal(ui.timers.size, 0);
+});
 
 test('hidden dashboard sends no requests and repeated resume starts only once', async () => {
   const ui = setup(true);

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import gc
 import sqlite3
+import sys
 import tempfile
 import unittest
 import weakref
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from flask import g
@@ -107,6 +109,69 @@ def detector_for_test(detector_type=YoloDetector):
 
 
 class InferenceBoundaryTest(unittest.TestCase):
+    def test_interrupted_failed_model_setup_cleanup_releases_model(self):
+        references, errors = [], []
+
+        class Model:
+            predictor = None
+
+            def __init__(self):
+                self.buffer = bytearray(640 * 480 * 3)
+                references.append(weakref.ref(self))
+
+            def __setattr__(self, name, value):
+                if name == 'predictor':
+                    raise KeyboardInterrupt('failed model cleanup interrupted')
+                super().__setattr__(name, value)
+
+        def failed_setup(*args):
+            raise RuntimeError('backend setup failed')
+
+        torch = SimpleNamespace(set_num_threads=lambda *_:None, set_num_interop_threads=lambda *_:None)
+        ultralytics = SimpleNamespace(YOLO=lambda *_:Model())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'test.pt'
+            path.touch()
+            with patch.dict(sys.modules, {'torch':torch, 'ultralytics':ultralytics}), \
+                    patch('equipment_manager.vision.detector.prepare_predictor', failed_setup):
+                for _ in range(100):
+                    detector = detector_for_test()
+                    detector.model_path = path
+                    try:
+                        detector.preflight()
+                    except KeyboardInterrupt as error:
+                        errors.append(error)
+            gc.collect()
+            self.assertEqual(len(errors), 100)
+            self.assertTrue(all(reference() is None for reference in references))
+
+    def test_interrupted_predictor_release_does_not_pin_closed_models(self):
+        class Model:
+            predictor = None
+
+            def __init__(self):
+                self.buffer = bytearray(640 * 480 * 3)
+
+            def __setattr__(self, name, value):
+                if name == 'predictor':
+                    raise KeyboardInterrupt('predictor release interrupted')
+                super().__setattr__(name, value)
+
+        references, errors = [], []
+        for _ in range(100):
+            detector = detector_for_test()
+            detector._model = Model()
+            references.append(weakref.ref(detector._model))
+            try:
+                detector.close()
+            except KeyboardInterrupt as error:
+                errors.append(error)
+            self.assertIsNone(detector._model)
+        gc.collect()
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+        self.assertTrue(all(traceback.extract_tb(error.__traceback__) for error in errors))
+
     def test_backend_errors_release_images_even_when_chained_tracebacks_are_kept(self):
         references = []
 

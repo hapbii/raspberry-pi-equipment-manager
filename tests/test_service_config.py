@@ -61,6 +61,14 @@ class ServiceConfigTestCase(unittest.TestCase):
         (self.app_dir / "models/best_ncnn_model").mkdir(parents=True)
         self.assertIn("ExecStart=", self.render())
 
+    def test_home_relative_model_path_is_accepted(self):
+        with tempfile.TemporaryDirectory(prefix="equipment-model-path-", dir=Path.home()) as directory:
+            model = Path(directory) / "best.pt"
+            model.touch()
+            configured = "~/" + model.relative_to(Path.home()).as_posix()
+            self.env.write_text(f"DETECTOR_MODE=yolo\nYOLO_MODEL_PATH={configured}\n", encoding="utf-8")
+            self.assertIn("ExecStart=", self.render())
+
     def test_root_or_unit_injection_is_rejected(self):
         for user in ("root", "pi\nExecStart=/bad"):
             with self.subTest(user=user), self.assertRaises(ValueError):

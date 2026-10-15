@@ -13,7 +13,6 @@ from ..inventory import (
     create_scan_session,
     find_equipment_by_name,
     get_equipment,
-    list_inventory,
 )
 from ..auth import login_required, scan_owner, transaction_student_id
 from ..vision import DetectionError, get_detection_service
@@ -97,11 +96,11 @@ def api_create_scan():
         detection = get_detection_service().detect(category_hint)
         equipment = find_equipment_by_name(detection.label)
         if not equipment:
-            aliases = current_app.config.get("YOLO_CLASS_ALIASES", {})
-            configured = ", ".join(item["name"] for item in list_inventory())
+            # A failed class match needs no full inventory/balance query or
+            # unbounded alias dump. Keep both the response and error log small.
             raise DetectionError(
-                f"모델 클래스 '{detection.label}'이 DB 기자재와 일치하지 않습니다. "
-                f"등록된 이름: {configured}. 클래스 별칭 설정도 확인해 주세요: {aliases}"
+                f"인식된 기자재 '{detection.label[:80]}'이 등록된 기자재와 일치하지 않습니다. "
+                "관리자에게 기자재 이름과 모델 클래스 별칭 설정을 확인해 달라고 요청하세요."
             )
         scan = create_scan_session(equipment["id"], detection.confidence, scan_owner())
         _record_scan_status(None)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import math
 import statistics
 import sys
 import time
@@ -27,8 +28,21 @@ def main() -> int:
     parser.add_argument("--interval", type=float, default=0.3, help="반복 간 대기 시간")
     parser.add_argument("--max-growth-mb", type=float, default=120.0, help="허용할 RSS 증가량")
     args = parser.parse_args()
+    try:
+        validate_options(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     app = create_app({"HEARTBEAT_ENABLED": False})
     return run_memory_check(app, args)
+
+
+def validate_options(args) -> None:
+    if type(args.scans) is not int or args.scans < 1:
+        raise ValueError("검사 횟수는 1 이상의 정수로 입력하세요.")
+    for name in ("interval", "max_growth_mb"):
+        value = getattr(args, name)
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError("대기 시간과 RSS 증가량 기준은 유한한 0 이상의 숫자로 입력하세요.")
 
 
 def run_memory_check(app, args) -> int:
@@ -46,7 +60,8 @@ def run_memory_check(app, args) -> int:
 
 
 def _run_memory_check(app, args) -> int:
-    scan_count = max(1, args.scans)
+    validate_options(args)
+    scan_count = args.scans
     if app.config["DETECTOR_MODE"] != "yolo":
         print(".env의 DETECTOR_MODE를 yolo로 변경하세요.")
         return 2
@@ -90,7 +105,7 @@ def _run_memory_check(app, args) -> int:
                 first_rss_samples.append(rss)
             recent_rss_samples.append(rss)
         print(f"{index:03d}/{scan_count} RSS={rss} MB | {summary}")
-        time.sleep(max(0, args.interval))
+        time.sleep(args.interval)
     live_final = current_rss_mb()
 
     growth = None if baseline is None or live_final is None else live_final - baseline

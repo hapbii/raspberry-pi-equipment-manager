@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import sys
+import gc
 import tempfile
 import threading
 import time
 import types
 import unittest
+import weakref
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +15,7 @@ from flask import Flask
 
 from equipment_manager import create_app
 from equipment_manager.hardware import (
-    INDICATOR_KEY, GpioIndicator, NullIndicator, close_hardware, get_indicator, init_hardware,
+    INDICATOR_KEY, GpioIndicator, NullIndicator, _close_devices, close_hardware, get_indicator, init_hardware,
 )
 
 
@@ -37,6 +39,34 @@ class FakeDevice:
 
 
 class GpioIndicatorTestCase(unittest.TestCase):
+    def test_retained_cleanup_interrupts_release_all_closed_devices(self):
+        references, errors, closed = [], [], []
+
+        class Device:
+            def __init__(self, pin):
+                self.pin = pin
+                self.buffer = bytearray(640 * 480 * 3)
+                references.append(weakref.ref(self))
+
+            def off(self):
+                if self.pin == 0:
+                    raise KeyboardInterrupt('GPIO off interrupted')
+
+            def close(self):
+                closed.append(self.pin)
+                if self.pin == 1:
+                    raise SystemExit('GPIO close interrupted')
+
+        for _ in range(100):
+            try:
+                _close_devices([Device(pin) for pin in range(3)])
+            except KeyboardInterrupt as error:
+                errors.append(error)
+        gc.collect()
+        self.assertEqual(closed, [0, 1, 2] * 100)
+        self.assertEqual(len(errors), 100)
+        self.assertTrue(all(reference() is None for reference in references))
+
     def setUp(self):
         FakeDevice.instances = []
         module = types.ModuleType("gpiozero")

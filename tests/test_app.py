@@ -10,9 +10,37 @@ from unittest.mock import patch
 
 from equipment_manager import create_app
 from equipment_manager.vision import DetectionError
+from equipment_manager.vision.types import Detection
+from equipment_manager.db import get_db
 
 
 class EquipmentManagerTestCase(unittest.TestCase):
+    def test_unknown_model_class_has_bounded_error_even_with_large_inventory(self):
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            with db:
+                db.executemany(
+                    """INSERT INTO equipment(name, total_qty, available_qty, created_at, updated_at)
+                       VALUES (?, 1, 1, '2026-10-10', '2026-10-10')""",
+                    ((f'equipment-{index:04d}',) for index in range(1200)),
+                )
+        self.app.config['DETECTOR_MODE'] = 'yolo'
+        service = self.app.extensions['detection_service']
+        for label in ('unregistered-model-class', 'long-model-class-' * 1000):
+            with self.subTest(label_length=len(label)), self.assertLogs('equipment_manager', level='ERROR'), \
+                    patch.object(service, 'detect', return_value=Detection(
+                        label=label, confidence=0.9, votes=3, frame_count=3,
+                    )):
+                with self.client.post('/api/scans', json={'action':'return'}) as response:
+                    self.assertEqual(response.status_code, 422)
+                    error = response.get_json()['error']
+                    self.assertIn(label[:80], error)
+                    self.assertIn('별칭', error)
+                    self.assertLess(len(error.encode('utf-8')), 1000)
+        with self.app.app_context():
+            self.assertEqual(get_db().execute('SELECT COUNT(*) FROM scan_sessions').fetchone()[0], 0)
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         database = str(Path(self.temp_dir.name) / "test.db")

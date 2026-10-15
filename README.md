@@ -1031,7 +1031,7 @@ node --test tests/test_frontend.cjs tests/test_dashboard.cjs tests/test_equipmen
 .\.venv\Scripts\python.exe tests/test_capture_preview_soak.py --cycles 1000 --warmup 100
 ```
 
-**확인된 범위:** 2026-09-26 PC 기준 Python 221개 중 219개 통과·2개 환경 제외, 화면 검사 32개 통과. 이는 실제 Pi 카메라·YOLO의 장시간 운영 검증을 대체하지 않습니다. [전체 코드 점검 보고서](docs/REFACTORING_AUDIT_2026-09-26.md)와 [과거 검증 기록](docs/VALIDATION_HISTORY.md)에 당시 조건·측정값을 보관합니다.
+**확인된 범위:** 2026-10-12 PC 기준 Python 268개 중 265개 통과·Linux/systemd 검사 3개 환경 제외, 화면 검사 37개 통과. 대여·반납·취소·삭제 혼합 1,000회 시나리오에서 재고·거래·미반납 잔액과 DB 무결성을 확인했습니다. 통합 점검에서는 웹 대여·반납 500쌍과 실제 PT·NCNN 저장 사진 각 100회에서 인식 서비스를 통한 자원 해제를 확인했습니다. 2026-10-09 Pi의 최종 30분 구간은 서버·메모리가 유지됐지만 180회 모두 미검출이었으므로 정상 인식 운영 검증은 남아 있습니다. 조건·수정 사항·한계는 [통합 점검 보고서](docs/REFACTORING_AUDIT_2026-10-12.md), [디버깅 보고서](docs/DEBUGGING_AUDIT_2026-10-12.md), [검증 기록](docs/VALIDATION_HISTORY.md)에 보관합니다.
 
 ### 14-3. 주요 파일과 도구
 

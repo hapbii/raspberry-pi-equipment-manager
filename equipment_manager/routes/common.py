@@ -3,12 +3,22 @@ from __future__ import annotations
 import secrets
 from functools import wraps
 
-from flask import current_app, flash, g, jsonify, redirect, request, session, url_for
+from flask import abort, current_app, flash, g, jsonify, redirect, request, session, url_for
 
 from ..security import constant_time_equal
 from ..readiness import recognition_status
 from ..auth import load_user
 from . import bp
+
+
+@bp.url_value_preprocessor
+def validate_database_route_ids(_endpoint, values):
+    # Flask's int converter accepts values larger than SQLite INTEGER can bind.
+    # Treat impossible resource IDs as missing before any database operation.
+    for name in ("equipment_id", "account_id"):
+        value = (values or {}).get(name)
+        if value is not None and not 1 <= value <= 2**63 - 1:
+            abort(404)
 
 
 @bp.before_app_request

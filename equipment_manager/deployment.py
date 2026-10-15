@@ -48,7 +48,7 @@ def validate_deployment(config: Mapping, root: Path, *, allow_mock: bool = False
             errors.append("DETECTOR_MODE: 실제 운영은 yolo가 필요합니다. 웹 확인만 할 때는 --allow-mock을 사용하세요.")
     elif mode == "yolo":
         raw_model = config.get("YOLO_MODEL_PATH")
-        model = Path(raw_model or "models/best.pt")
+        model = Path(raw_model or "models/best.pt").expanduser()
         if not model.is_absolute():
             model = root / model
         if not raw_model or not model.exists() or not os.access(model, os.R_OK):

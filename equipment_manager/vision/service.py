@@ -4,12 +4,14 @@ import gc
 import logging
 import threading
 from dataclasses import replace
+from contextlib import contextmanager
 from time import perf_counter
 
 from flask import current_app
 
 from ..system_metrics import current_rss_mb
 from ..db import utc_now
+from ..resources import release_error_frames
 from .detector import YoloDetector, build_detector
 from .types import CameraError, Detection, DetectionError, PreflightResult
 
@@ -34,31 +36,52 @@ class DetectionService:
         self.checked_at: str | None = None
 
     def _record_check(self, state: str) -> None:
+        checked_at = None
+        try:
+            checked_at = utc_now()
+        except Exception as exc:
+            release_error_frames(exc)
+            logger.warning("Recognition status timestamp unavailable", exc_info=True)
         with self._metrics_lock:
             self.check_state = state
-            self.checked_at = utc_now()
+            self.checked_at = checked_at
 
-    def detect(self, category_hint: str | None = None) -> Detection:
+    @contextmanager
+    def _operation(self, busy_message: str, *, count_busy: bool = False):
+        """Serialize camera work and release error frames at one boundary."""
         if self._closed:
             raise DetectionError("객체 인식 서비스가 종료되었습니다.")
         if not self._lock.acquire(blocking=False):
-            with self._metrics_lock:
-                self._busy_rejections += 1
-            raise DetectionError("현재 다른 인식 작업을 처리 중입니다. 잠시 후 다시 시도해 주세요.")
+            if count_busy:
+                with self._metrics_lock:
+                    self._busy_rejections += 1
+            raise DetectionError(busy_message)
         try:
-            return self._detect_locked(category_hint)
+            # Shutdown may have acquired the lock after the first state read.
+            if self._closed:
+                raise DetectionError("객체 인식 서비스가 종료되었습니다.")
+            yield
+        except BaseException as exc:
+            # Includes metadata/GC failures after inference has returned.
+            release_error_frames(exc)
+            raise
         finally:
             # Metrics and cleanup may also fail; neither may strand the lock.
             self._lock.release()
 
+    def detect(self, category_hint: str | None = None) -> Detection:
+        with self._operation(
+            "현재 다른 인식 작업을 처리 중입니다. 잠시 후 다시 시도해 주세요.", count_busy=True,
+        ):
+            return self._detect_locked(category_hint)
+
     def _detect_locked(self, category_hint: str | None) -> Detection:
-        started = perf_counter()
+        started = duration_ms = None
         succeeded = False
         try:
             with self._metrics_lock:
                 self._attempt_count += 1
-            if self._closed:
-                raise DetectionError("객체 인식 서비스가 종료되었습니다.")
+            started = perf_counter()
             detector = self._detector
             if detector is None:
                 raise DetectionError("객체 인식 서비스가 종료되었습니다.")
@@ -69,8 +92,8 @@ class DetectionService:
                 duration_ms=duration_ms,
                 memory_rss_mb=current_rss_mb(),
             )
-            succeeded = True
             self._record_check("ready")
+            succeeded = True
             return result
         except Exception as exc:
             self._record_check("camera_error" if isinstance(exc, CameraError) else "inference_error")
@@ -78,43 +101,51 @@ class DetectionService:
                 self.last_error = str(exc)[:500]
             raise
         finally:
-            duration_ms = round((perf_counter() - started) * 1000)
-            with self._metrics_lock:
-                self.last_duration_ms = duration_ms
-                if succeeded:
-                    self._success_count += 1
-                    self.last_error = None
-                else:
-                    self._failure_count += 1
-                should_collect = (
-                    self._attempt_count > 0
-                    and self._attempt_count % self.gc_interval_scans == 0
-                )
-            if should_collect:
-                try:
-                    gc.collect()
-                except Exception:
-                    # Preserve the inference result/original exception.
-                    logger.warning("Post-inference garbage collection failed", exc_info=True)
+            self._finish_attempt(started, succeeded, duration_ms)
+
+    def _finish_attempt(self, started: float | None, succeeded: bool, duration_ms: int | None) -> None:
+        # Reuse the duration already measured on success. On failure, optional
+        # final timing must not replace the original camera/inference error.
+        if duration_ms is None and started is not None:
+            try:
+                duration_ms = round((perf_counter() - started) * 1000)
+            except Exception as exc:
+                release_error_frames(exc)
+                logger.warning("Recognition duration unavailable", exc_info=True)
+        with self._metrics_lock:
+            self.last_duration_ms = duration_ms
+            if succeeded:
+                self._success_count += 1
+                self.last_error = None
+            else:
+                self._failure_count += 1
+            should_collect = (
+                self._attempt_count > 0
+                and self._attempt_count % self.gc_interval_scans == 0
+            )
+        if should_collect:
+            try:
+                gc.collect()
+            except Exception as exc:
+                release_error_frames(exc)
+                logger.warning("Post-inference garbage collection failed", exc_info=True)
 
     def preflight(self) -> PreflightResult:
-        if not self._lock.acquire(blocking=False):
-            raise DetectionError("현재 인식 중입니다. 잠시 후 점검해 주세요.")
+        detector = None
         try:
-            if self._closed:
-                raise DetectionError("객체 인식 서비스가 종료되었습니다.")
-            detector = self._detector
-            if not isinstance(detector, YoloDetector):
-                raise DetectionError("실제 YOLO 모드에서만 사전 점검을 실행할 수 있습니다.")
-            try:
-                result = detector.preflight()
-            except Exception as exc:
-                self._record_check("camera_error" if isinstance(exc, CameraError) else "inference_error")
-                raise
-            self._record_check("ready")
-            return result
+            with self._operation("현재 인식 중입니다. 잠시 후 점검해 주세요."):
+                detector = self._detector
+                if not isinstance(detector, YoloDetector):
+                    raise DetectionError("실제 YOLO 모드에서만 사전 점검을 실행할 수 있습니다.")
+                try:
+                    result = detector.preflight()
+                except Exception as exc:
+                    self._record_check("camera_error" if isinstance(exc, CameraError) else "inference_error")
+                    raise
+                self._record_check("ready")
+                return result
         finally:
-            self._lock.release()
+            detector = None
 
     def status(self) -> dict:
         with self._metrics_lock:
@@ -142,6 +173,9 @@ class DetectionService:
         try:
             if detector is not None:
                 detector.close()
+        except BaseException as exc:
+            release_error_frames(exc)
+            raise
         finally:
             detector = None
             gc.collect()
