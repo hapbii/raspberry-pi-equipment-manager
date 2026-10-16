@@ -28,6 +28,23 @@
   </div>
 </section>
 
+<section class="panel developer-actions anchor-section" id="detector-mode">
+  <div>
+    <h2>인식 모드 전환</h2>
+    <p>현재 모드: <strong>{{ detector_mode|upper }}</strong>. YOLO는 실제 카메라 인식, mock은 웹 화면 확인용입니다.</p>
+    <p>변경은 바로 적용되고 재부팅 후에도 유지됩니다. mock에서는 실제 대여·반납을 할 수 없습니다.</p>
+    {% if not mode_change_available %}<p>설정 파일이 없습니다. 프로젝트의 .env 파일을 먼저 준비해 주세요.</p>{% endif %}
+    {% if detector_mode == 'mock' and not model_exists %}<p>YOLO 전환에는 학습 모델 파일 또는 NCNN 폴더가 필요합니다.</p>{% endif %}
+    {% if inference.busy %}<p>인식·점검이 끝난 뒤 전환할 수 있습니다.</p>{% endif %}
+  </div>
+  <form method="post" action="{{ url_for('web.developer_detector_mode') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="expected_mode" value="{{ detector_mode }}">
+    <input type="hidden" name="mode" value="{{ 'mock' if detector_mode == 'yolo' else 'yolo' }}">
+    <button class="button primary" type="submit" {% if inference.busy or not mode_change_available or (detector_mode == 'mock' and not model_exists) %}disabled{% endif %}>{{ 'mock 모드로 전환' if detector_mode == 'yolo' else 'YOLO 모드로 전환' }}</button>
+  </form>
+</section>
+
 <div class="developer-grid">
   <section class="panel recognition-status">
     <h2>{{ recognition.title }}</h2><p>{{ recognition.message }}</p>

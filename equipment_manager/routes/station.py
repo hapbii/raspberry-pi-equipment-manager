@@ -131,6 +131,8 @@ def api_create_scan():
 @bp.post("/api/transactions")
 @login_required
 def api_create_transaction():
+    if current_app.config["DETECTOR_MODE"] == "mock" and not current_app.config["TESTING"]:
+        return jsonify(ok=False, error="모의 모드에서는 실제 대여·반납을 할 수 없습니다."), 422
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify(ok=False, error="잘못된 요청입니다."), 400
@@ -139,16 +141,17 @@ def api_create_transaction():
     except ValueError:
         return jsonify({"ok": False, "error": "수량이 올바르지 않습니다."}), 400
     try:
-        result = commit_transaction(
-            scan_token=str(data.get("scan_token", "")),
-            student_id=transaction_student_id(data),
-            action=str(data.get("action", "")),
-            quantity=quantity,
-            reason=data.get("reason", ""),
-            owner_key=scan_owner(),
-        )
+        with get_detection_service().transaction(current_app.config):
+            result = commit_transaction(
+                scan_token=str(data.get("scan_token", "")),
+                student_id=transaction_student_id(data),
+                action=str(data.get("action", "")),
+                quantity=quantity,
+                reason=data.get("reason", ""),
+                owner_key=scan_owner(),
+            )
         _notify_indicator(success=True)
         return jsonify({"ok": True, "transaction": result.__dict__})
-    except InventoryError as exc:
+    except (InventoryError, DetectionError) as exc:
         _notify_indicator(success=False)
         return jsonify({"ok": False, "error": str(exc)}), 422

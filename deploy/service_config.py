@@ -40,6 +40,7 @@ def render_service(app_dir: Path, user: str, group: str, *, allow_mock: bool = F
     if not (app_dir / "serve.py").is_file():
         raise ValueError("프로젝트에서 serve.py를 찾을 수 없습니다. 최신 코드를 받아 주세요.")
     mode = (values.get("DETECTOR_MODE", "mock") or "").lower()
+    allow_mock = allow_mock or (values.get("ALLOW_MOCK_MODE") or "").strip().lower() in {"1", "true", "yes", "on"}
     if mode == "mock":
         if not allow_mock:
             raise ValueError("모델 없이 웹 확인용으로 설치하려면 --allow-mock 옵션을 붙이세요. 실제 운영은 DETECTOR_MODE=yolo로 설정하세요.")

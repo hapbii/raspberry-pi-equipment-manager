@@ -7,6 +7,7 @@ from flask import current_app, flash, g, redirect, render_template, request, url
 
 from ..auth import RateLimited, take_attempt
 from ..db import get_db
+from ..detector_mode import ModeChangeError, switch_detector_mode
 from ..error_logs import get_error_log_store
 from ..power import (poweroff_available, program_stop_available, program_update_available,
                      schedule_poweroff, schedule_program_stop, schedule_program_update)
@@ -46,7 +47,29 @@ def developer_page():
         program_stop_available=program_stop_available(),
         program_update_available=program_update_available(),
         update_status=update_status(),
+        mode_change_available=Path(current_app.config["ENV_FILE_PATH"]).is_file(),
     )
+
+
+@bp.post("/developer/detector-mode")
+@developer_required
+def developer_detector_mode():
+    try:
+        changed = switch_detector_mode(request.form.get("mode", ""), request.form.get("expected_mode", ""))
+    except (ModeChangeError, DetectionError) as exc:
+        flash(str(exc), "error")
+    except Exception:
+        current_app.logger.exception("Detector mode change failed")
+        flash("모드를 변경하지 못했습니다. .env 파일 권한과 오류 로그를 확인해 주세요.", "error")
+    else:
+        mode = current_app.config["DETECTOR_MODE"]
+        if changed:
+            current_app.logger.warning("Developer changed detector mode to %s", mode)
+            flash("YOLO 모드로 변경했습니다. 카메라·모델 실제 점검을 실행해 주세요." if mode == "yolo"
+                  else "mock 모드로 변경했습니다. 웹 화면 확인만 가능하며 실제 대여·반납은 중지됩니다.", "success")
+        else:
+            flash("이미 선택한 모드로 실행 중입니다.", "success")
+    return redirect(f"{url_for('web.developer_page')}#detector-mode")
 
 
 @bp.post("/developer/error-logs/clear")

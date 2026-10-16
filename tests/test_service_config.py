@@ -56,6 +56,13 @@ class ServiceConfigTestCase(unittest.TestCase):
         self.assertIn("ExecStart=", unit)
         self.assertNotIn("--allow-mock", unit)
 
+    def test_system_screen_mock_choice_survives_service_reinstall(self):
+        self.env.write_text("DETECTOR_MODE=mock\nALLOW_MOCK_MODE=true\n", encoding="utf-8")
+        self.assertIn("--allow-mock", self.render())
+        self.env.write_text("DETECTOR_MODE=yolo\nALLOW_MOCK_MODE=true\nYOLO_MODEL_PATH=missing.pt\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.render()
+
     def test_ncnn_directory_is_accepted(self):
         self.env.write_text("DETECTOR_MODE=yolo\nYOLO_MODEL_PATH=models/best_ncnn_model\n", encoding="utf-8")
         (self.app_dir / "models/best_ncnn_model").mkdir(parents=True)

@@ -163,6 +163,51 @@ class DetectionService:
                 "checked_at": self.checked_at,
             }
 
+    @contextmanager
+    def transaction(self, config: dict):
+        # A mode change cannot slip between the HTTP mode check and DB commit.
+        with self._operation("다른 인식·거래를 처리 중입니다. 잠시 후 다시 시도해 주세요."):
+            if config["DETECTOR_MODE"] == "mock" and not config["TESTING"]:
+                raise DetectionError("모의 모드에서는 실제 대여·반납을 할 수 없습니다.")
+            yield
+
+    def switch_mode(self, config: dict, mode: str, expected: str, persist) -> bool:
+        """Replace the backend only when idle; keep the service/lock identity."""
+        with self._operation("인식·점검 중에는 모드를 바꿀 수 없습니다. 완료 후 다시 시도해 주세요."):
+            if config["DETECTOR_MODE"] != expected:
+                raise DetectionError("다른 요청에서 모드가 변경되었습니다. 새로고침 후 다시 시도해 주세요.")
+            if mode == expected:
+                return False
+            replacement = previous = None
+            try:
+                # Constructors are lazy: opening the camera/loading the model
+                # remains the job of the next preflight or real scan.
+                replacement = build_detector(dict(config, DETECTOR_MODE=mode))
+                persist()
+                previous, self._detector = self._detector, replacement
+                replacement = None
+                config.update(DETECTOR_MODE=mode, ALLOW_MOCK_MODE=mode == "mock")
+                with self._metrics_lock:
+                    self._attempt_count = self._success_count = self._failure_count = 0
+                    self._busy_rejections = 0
+                    self.last_duration_ms = self.last_error = self.checked_at = None
+                    self.check_state = "unchecked"
+                if previous is not None:
+                    try:
+                        previous.close()
+                    except Exception as exc:
+                        release_error_frames(exc)
+                        logger.exception("Previous detector cleanup failed after mode change")
+                return True
+            finally:
+                try:
+                    # If construction/persistence fails, keep the old detector
+                    # active and release the unused candidate, even on Ctrl+C.
+                    if replacement is not None:
+                        replacement.close()
+                finally:
+                    replacement = previous = None
+
     def close(self) -> None:
         detector = None
         with self._lock:

@@ -74,6 +74,9 @@ class Config:
     DEFAULT_QUANTITY = env_int("DEFAULT_QUANTITY", 10)
 
     DETECTOR_MODE = os.getenv("DETECTOR_MODE", "mock").lower()
+    # The system screen explicitly opts into persistent web-preview startup.
+    ALLOW_MOCK_MODE = env_bool("ALLOW_MOCK_MODE", False)
+    ENV_FILE_PATH = str(BASE_DIR / ".env")
     YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", str(BASE_DIR / "models" / "best.pt"))
     YOLO_IMAGE_SIZE = env_int("YOLO_IMAGE_SIZE", 320)
     YOLO_CONFIDENCE = env_float("YOLO_CONFIDENCE", 0.60)

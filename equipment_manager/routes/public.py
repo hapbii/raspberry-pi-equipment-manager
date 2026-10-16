@@ -42,6 +42,7 @@ def api_status():
     row = get_db().execute("SELECT * FROM device_status WHERE id = 1").fetchone()
     now = datetime.now(timezone.utc)
     device = dict(row) if row else {}
+    device["detector_mode"] = current_app.config["DETECTOR_MODE"]
     last_seen = device.get("last_seen")
     online = False
     if last_seen:
