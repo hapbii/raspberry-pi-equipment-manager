@@ -7,16 +7,8 @@
     <h1>현재 기자재 현황</h1>
     <p>학교 내부 어디서든 사용 가능한 기자재 수량을 확인할 수 있습니다.</p>
   </div>
-  <div class="device-card">
-    <span id="device-dot" class="status-dot unknown"></span>
-    <div><strong id="device-state">상태 확인 중</strong><small id="last-seen">잠시만 기다려 주세요.</small></div>
-  </div>
 </section>
 
-  <section class="panel recognition-status" role="status">
-    <strong id="recognition-title">{{ recognition.title }}</strong>
-    <p id="recognition-message">{{ recognition.message }}</p>
-  </section>
 <div class="content-heading">
   <div><p class="eyebrow">EQUIPMENT</p><h2>기자재별 사용 가능 수량</h2></div>
   <span class="count-badge">총 {{ inventory|length }}종</span>
@@ -41,9 +33,5 @@
   {% endfor %}
 </section>
 
-<section class="info-strip">
-  <div><strong>자동 갱신</strong><span>5초마다 최신 상태를 확인합니다.</span></div>
-  <div><strong>개인정보 보호</strong><span>일반 화면에는 학생 정보를 표시하지 않습니다.</span></div>
-  <div><strong>마지막 갱신</strong><span id="dashboard-updated">확인 중</span></div>
-</section>
+<p class="inventory-updated">마지막 갱신 <span id="dashboard-updated" role="status">확인 중</span></p>
 {% endblock %}

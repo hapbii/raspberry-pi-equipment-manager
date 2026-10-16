@@ -15,7 +15,7 @@
     <div class="header-inner">
       <a class="brand" href="{{ url_for('web.dashboard') }}">
         <span class="brand-mark" aria-hidden="true">AI</span>
-        <span><strong>실습 기자재 관리</strong><small>Raspberry Pi 인식 시스템</small></span>
+        <span><strong>실습 기자재 관리</strong><small>실습 기자재 대여·반납</small></span>
       </a>
       <nav aria-label="주요 메뉴">
         <a class="nav-link {{ 'active' if request.endpoint == 'web.dashboard' else '' }}" href="{{ url_for('web.dashboard') }}" {{ 'aria-current="page"'|safe if request.endpoint == 'web.dashboard' else '' }}>현황</a>
@@ -47,7 +47,7 @@
   <footer class="site-footer">
     <strong>AI 기반 실습 기자재 관리 시스템</strong>
     <button id="usage-guide-open" class="button ghost small" type="button" aria-haspopup="dialog" aria-controls="usage-guide" hidden>사용 유의사항</button>
-    <span>{{ current_user.name ~ ' 로그인 중' if current_user else '학교 내부망에서 안전하게 운영하세요.' }}</span>
+    <span>{{ current_user.name ~ ' 로그인 중' if current_user else '이용 후에는 반납 기한을 확인해 주세요.' }}</span>
   </footer>
 
   <dialog id="usage-guide" class="usage-guide" aria-labelledby="usage-guide-title" aria-describedby="usage-guide-intro">
@@ -61,8 +61,8 @@
           <p>카메라는 기자재 종류를 인식하며, 물품 수를 세지 않습니다. 여러 개를 빌리거나 반납할 때도 한 개씩 인식하고 처리해 주세요.</p>
         </li>
         <li>
-          <strong>라파에 연결된 카메라를 사용합니다.</strong>
-          <p>접속한 PC나 휴대전화의 카메라가 아닙니다. 물품 전체가 보이게 놓고 손이나 다른 물건으로 가리지 마세요.</p>
+          <strong>지정된 촬영 위치에 물품을 놓아 주세요.</strong>
+          <p>물품 전체가 보이게 놓고 손이나 다른 물건으로 가리지 마세요.</p>
         </li>
         <li>
           <strong>인식 결과를 확인한 뒤 확정해 주세요.</strong>

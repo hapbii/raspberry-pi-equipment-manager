@@ -99,7 +99,7 @@ test('unchanged equipment does not reload the dashboard', async () => {
   await settle();
   assert.equal(ui.reloads, 0);
   assert.equal(ui.timers.size, 1);
-  assert.equal(ui.element('#device-state').textContent, '서버 온라인');
+  assert.equal(ui.element('#dashboard-updated').textContent, '기록 없음');
   assert.equal(ui.element('#inventory-grid [data-equipment-id="1"] .available-number').textContent, 2);
 });
 
@@ -134,7 +134,7 @@ test('hidden tab aborts in-flight fetch and ignores its late successful response
   assert.equal(ui.requests[0].signal.aborted, true);
   ui.answer();
   await settle();
-  assert.equal(ui.element('#device-state').textContent, '');
+  assert.equal(ui.element('#dashboard-updated').textContent, '');
   assert.equal(ui.timers.size, 0);
   ui.show();
   assert.equal(ui.requests.length, 2);
@@ -179,5 +179,5 @@ test('request timeout is cleaned before scheduling the next poll', async () => {
   ui.abort();
   await settle();
   assert.equal(ui.timers.size, 1);
-  assert.equal(ui.element('#device-state').textContent, '서버 연결 실패');
+  assert.equal(ui.element('#dashboard-updated').textContent, '현황을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
 });

@@ -246,7 +246,7 @@ class EquipmentManagerTestCase(unittest.TestCase):
                 self.assertIn('id="loan-reason"', html)
                 self.assertNotIn('id="quantity"', html)
                 self.assertNotIn('id="mock-equipment"', html)
-                self.assertEqual("객체 인식 준비 중" in html, mode == "mock")
+                self.assertEqual("현재 이용할 수 없습니다" in html, mode == "mock")
 
     def test_loan_reason_is_required_bounded_and_saved_in_history(self):
         item = self.first_equipment()

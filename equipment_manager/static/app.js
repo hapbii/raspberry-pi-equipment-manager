@@ -108,24 +108,10 @@
           badge.textContent = item.available_qty > 0 ? "사용 가능" : "대여 불가";
           badge.classList.toggle("empty", item.available_qty <= 0);
         });
-        const dot = document.querySelector("#device-dot");
-        const state = document.querySelector("#device-state");
-        dot.className = `status-dot ${data.device.online ? "online" : "offline"}`;
-        state.textContent = data.device.online ? "서버 온라인" : "서버 응답 지연";
-        if (data.recognition) {
-          document.querySelector("#recognition-title").textContent = data.recognition.title;
-          document.querySelector("#recognition-message").textContent = data.recognition.message;
-        }
-        document.querySelector("#last-seen").textContent = `마지막 신호 ${formatDate(data.device.last_seen)}`;
         document.querySelector("#dashboard-updated").textContent = formatDate(data.server_time);
       } catch (error) {
         if (dashboardStopped) return;
-        const dot = document.querySelector("#device-dot");
-        dot.className = "status-dot offline";
-        document.querySelector("#device-state").textContent = "서버 연결 실패";
-        document.querySelector("#last-seen").textContent = error.name === "AbortError"
-          ? "상태 요청 시간 초과"
-          : error.message;
+        document.querySelector("#dashboard-updated").textContent = "현황을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.";
       } finally {
         window.clearTimeout(timeout);
         dashboardDeadline = null;
@@ -248,7 +234,7 @@
       const showPeriod = selectedAction() === "loan" && scanDueDate !== null;
       resultLoanPeriod.classList.toggle("hidden", !showPeriod);
       if (showPeriod) {
-        resultLoanPeriod.textContent = `관리자 설정: ${scanLoanPeriodDays}일 대여 · 반납 예정 ${scanDueDate}`;
+        resultLoanPeriod.textContent = `대여 기간 ${scanLoanPeriodDays}일 · 반납 예정 ${scanDueDate}`;
       }
     }
 
@@ -277,9 +263,7 @@
       scanToken = null;
       scanDueDate = null;
       scanLoanPeriodDays = null;
-      ["#result-name", "#result-confidence", "#result-votes", "#result-duration"].forEach((selector) => {
-        document.querySelector(selector).textContent = "";
-      });
+      document.querySelector("#result-name").textContent = "";
       resultLoanPeriod.textContent = "";
       resultPanel.classList.add("hidden");
       resultLoanPeriod.classList.add("hidden");
@@ -309,9 +293,6 @@
         scanDueDate = data.scan.due_date;
         scanLoanPeriodDays = data.scan.loan_period_days;
         document.querySelector("#result-name").textContent = `${data.scan.equipment_name} 기자재입니다.`;
-        document.querySelector("#result-confidence").textContent = `${(data.scan.confidence * 100).toFixed(1)}%`;
-        document.querySelector("#result-votes").textContent = `${data.votes}/${data.frame_count} 프레임 일치`;
-        document.querySelector("#result-duration").textContent = `${(data.duration_ms / 1000).toFixed(2)}초`;
         placeholder.classList.add("hidden");
         resultPanel.classList.remove("hidden");
         syncLoanPeriodResult();
